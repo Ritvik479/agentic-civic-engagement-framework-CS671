@@ -68,13 +68,13 @@ project-root/
 │   │   └── pair_b/
 │   ├── db/
 │   └── schemas/
+│   │   ├── context.py  # MASTER context object
 │
 ├── configs/
 │   └── authority_data.json
 │
 ├── data/
 ├── scripts/
-├── tests/
 │
 ├── .env
 ├── .env.example
@@ -111,9 +111,6 @@ Sample inputs (videos, links).
 
 ### `scripts/`
 Testing and debug scripts.
-
-### `tests/`
-Optional unit/integration tests.
 
 ---
 
@@ -201,10 +198,10 @@ geopy
 | Branch | Purpose |
 |---|---|
 | `main` | Stable, reviewed code only |
-| `pair-a` | Pair A working branch |
-| `pair-b` | Pair B working branch |
-| `trio-c` | Trio C working branch |
-| `pair-d` | Pair D working branch |
+| `pair-a-mobile` | Pair A working branch |
+| `pair-b-backend` | Pair B working branch |
+| `trio-c-authority` | Trio C working branch |
+| `pair-d-vision` | Pair D working branch |
 
 ### Daily Workflow
 
