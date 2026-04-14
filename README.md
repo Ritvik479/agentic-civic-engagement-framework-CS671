@@ -1,275 +1,290 @@
-# 🧠 Agentic Civic Complaint System
+# Agentic Civic Complaint System
 
-An intelligent backend system that converts citizen-uploaded videos (or social media links) into structured government complaints using Computer Vision, NLP, and Agentic AI.
-
----
-
-## 👥 Team Structure & Roles
-
-### 🔹 Pair A — Mobile App (Frontend)
-**Members:** Vitthal, Hritika
-
-**Responsibilities:**
-- Video upload (camera + file picker)
-- Location confirmation UI
-- API calls to backend: `POST /process`, `POST /confirm-location`, `GET /status/:id`
-- Local storage of complaint history (AsyncStorage)
+A mobile application for filing civic complaints through video evidence. Users record or upload a video of a civic issue (e.g. potholes, broken infrastructure), which is sent to an AI pipeline backend that analyzes the footage and generates a structured complaint report with severity assessment.
 
 ---
 
-### 🔹 Pair B — Backend + Agent Orchestration
-**Members:** Ritvik, Vidhi
+## Architecture
 
-**Responsibilities:**
-- FastAPI server (all endpoints)
-- SmolAgents orchestration (agent loop)
-- Context schema design (**CRITICAL**)
-- SQLite database (tracking + status)
-- Agent 5: Playwright (portal submission)
-- Agent 6: Escalation logic
-
----
-
-### 🔹 Trio C — Authority Mapping + LLM + Severity
-**Members:** Palak, Vrinda, Himank
-
-**Responsibilities:**
-- Authority mapping (JSON dataset)
-- Severity scoring (LLM)
-- Complaint drafting (LLM)
-- Escalation routing logic
-
----
-
-### 🔹 Pair D — Vision + Speech + Location
-**Members:** Vaishnavi, Aishna
-
-**Responsibilities:**
-- Video download (yt-dlp)
-- Audio extraction + transcription (Whisper)
-- Frame extraction (OpenCV)
-- Vision analysis (Groq Vision)
-- Issue detection (YOLOv8 + LLM)
-- Location resolution (weighted model)
-
----
-
-## 📁 Project Structure
 ```
-project-root/
-│
+┌─────────────────────────────────────────────────────┐
+│                   React Native App                   │
+│                    (Expo SDK)                        │
+│                                                      │
+│  UploadScreen  ──►  TabNavigator  ──►  TasksScreen  │
+│  (record/pick       (navigation)      (job polling) │
+│   + location)                                        │
+└──────────────────────┬──────────────────────────────┘
+                       │ POST /process (multipart)
+                       │ GET  /jobs/:id  (polling)
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                  FastAPI Backend                     │
+│                                                      │
+│  /process  ──►  save video  ──►  background agent  │
+│  /jobs/:id ◄──  job store   ◄──  (AI pipeline)     │
+└─────────────────────────────────────────────────────┘
+```
+
+**Flow:**
+1. User records/selects a video and location is captured automatically.
+2. App sends video + GPS coordinates to `POST /process`.
+3. Server saves the file, creates a job entry, and returns a `jobId` immediately.
+4. AI agent runs in the background — currently a placeholder (5s sleep + fake report).
+5. App polls `GET /jobs/:jobId` every 3 seconds until status is `"completed"`.
+6. Result screen shows report, severity, and PDF path.
+
+---
+
+## Project Structure
+
+```
+/
 ├── app/
-│   ├── main.py
-│   ├── routes/
-│   ├── agents/
-│   ├── tools/
-│   │   ├── pair_d/
-│   │   ├── trio_c/
-│   │   └── pair_b/
-│   ├── db/
-│   └── schemas/
-│
-├── configs/
-│   └── authority_data.json
-│
-├── data/
-├── scripts/
-├── tests/
-│
-├── .env
-├── .env.example
-├── .gitignore
-├── requirements.txt
-└── README.md
+│   ├── screens/
+│   │   ├── HomeScreen.jsx          # Dashboard (not included in review)
+│   │   ├── UploadScreen.jsx        # Video capture + submit
+│   │   └── TasksScreen.jsx         # Job status polling + results
+│   └── navigation/
+│       └── TabNavigator.jsx        # Bottom tab navigator
+├── backend/
+│   └── main.py                     # FastAPI server
+├── app.json                        # Expo configuration
+└── .env                            # EXPO_PUBLIC_API_URL
 ```
 
 ---
 
-## 🧩 File Structure Explained
+## Prerequisites
 
-### `app/`
-Main backend codebase.
-
-- **`main.py`** — Entry point of the FastAPI server; registers all routes.
-- **`routes/`** — Defines API endpoints (`/process`, `/status`, etc.); handles request → response mapping only.
-- **`agents/`** — Controls the pipeline via SmolAgents; registers tools and defines execution logic.
-- **`tools/`** — All agent tools grouped by team:
-  - `pair_d/` → extraction, CV, location
-  - `trio_c/` → authority, severity, drafting
-  - `pair_b/` → submission, escalation
-  
-  > 👉 Each team **only** works in their own folder.
-
-- **`db/`** — SQLite logic; stores complaints, status, and tracking IDs.
-- **`schemas/`** — Defines all shared data structures: Context object (**most important**), request schema, response schema.
-
-### `configs/`
-Static data (authority mapping JSON). Maintained by Trio C.
-
-### `data/`
-Sample inputs (videos, links).
-
-### `scripts/`
-Testing and debug scripts.
-
-### `tests/`
-Optional unit/integration tests.
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Node.js | ≥ 18 | React Native / Expo |
+| Expo CLI | Latest | Build and dev server |
+| Python | ≥ 3.10 | Backend |
+| pip | Latest | Python deps |
+| Android Studio / Xcode | Latest | Native device builds |
 
 ---
 
-## 🔐 Secrets & Configuration
+## Setup
 
-### `.env` — Secrets File
+### 1. Clone the repository
 
-Stores sensitive data like API keys. **Never commit this file.**
+```bash
+git clone <repo-url>
+cd civic-agent-app
+```
+
+### 2. Frontend
+
+```bash
+npm install
+```
+
+Create a `.env` file in the project root:
+
 ```env
-GROQ_API_KEY=your_api_key_here
-OPENAI_API_KEY=your_api_key_here
+EXPO_PUBLIC_API_URL=http://<your-machine-ip>:8000
 ```
 
-**Reading it in Python:**
+> ⚠️ Use your machine's LAN IP address (e.g. `192.168.1.x`), not `localhost`. The mobile device/emulator needs to reach your machine over the network.
+
+### 3. Backend
+
+```bash
+cd backend
+pip install fastapi uvicorn python-multipart reportlab
+```
+
+Start the server:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Verify it's running:
+
+```bash
+curl http://localhost:8000/
+# {"message":"Backend is running"}
+```
+
+### 4. Run the app
+
+```bash
+npx expo start
+```
+
+Scan the QR code with **Expo Go** (Android/iOS) or press `a` for Android emulator / `i` for iOS simulator.
+
+---
+
+## API Reference
+
+### `POST /process`
+
+Accepts a video file and GPS coordinates. Returns a job ID immediately; processing happens in the background.
+
+**Request** — `multipart/form-data`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `video` | File | Video file (`mp4`, `mov`, etc.) |
+| `latitude` | float | GPS latitude |
+| `longitude` | float | GPS longitude |
+
+**Response**
+
+```json
+{
+  "success": true,
+  "data": {
+    "jobId": "job_367169a6",
+    "status": "processing"
+  }
+}
+```
+
+---
+
+### `GET /jobs/:jobId`
+
+Returns the current state of a processing job.
+
+**Response — processing**
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "processing",
+    "file": "uploads/job_367169a6.mp4",
+    "location": { "lat": 31.7074, "lng": 76.9218 },
+    "result": null
+  }
+}
+```
+
+**Response — completed**
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "completed",
+    "file": "uploads/job_367169a6.mp4",
+    "location": { "lat": 31.7074, "lng": 76.9218 },
+    "result": {
+      "report": "Pothole detected",
+      "severity": "high",
+      "pdf": "uploads/job_367169a6.mp4.pdf"
+    }
+  }
+}
+```
+
+**Response — not found**
+
+```json
+{
+  "success": false,
+  "error": "Job not found"
+}
+```
+
+---
+
+## Replacing the Placeholder Agent
+
+The current `run_agent()` in `main.py` is a stub. To plug in a real AI pipeline:
+
 ```python
-from dotenv import load_dotenv
-import os
+def run_agent(job_id, file_path):
+    try:
+        # 1. Load the video
+        # video_frames = extract_frames(file_path)
 
-load_dotenv()
-api_key = os.getenv("GROQ_API_KEY")
+        # 2. Run your model
+        # result = your_model.predict(video_frames)
+
+        # 3. Generate report
+        # pdf_path = generate_real_report(result, job_id)
+
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["result"] = {
+            "report": result.description,
+            "severity": result.severity,
+            "pdf": pdf_path,
+        }
+    except Exception as e:
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(e)
 ```
 
-### `.env.example` — Template for the team
-```env
-GROQ_API_KEY=your_key_here
-OPENAI_API_KEY=your_key_here
-```
-
-### `.gitignore`
-
-Prevents secrets and unnecessary files from being tracked by Git.
-```
-venv/
-__pycache__/
-*.pyc
-.env
-*.db
-```
+The agent receives `job_id` (string) and `file_path` (path to saved video). Location data is available at `jobs[job_id]["location"]`.
 
 ---
 
-## 📦 Dependencies
+## Environment Variables
 
-### Core (Everyone installs)
-```
-fastapi
-uvicorn
-pydantic
-python-dotenv
-requests
-```
-
-### Pair B — Backend
-```
-smolagents
-playwright
-```
-After installing, run:
-```bash
-playwright install
-```
-
-### Trio C — LLM
-```
-openai   # or groq
-```
-
-### Pair D — Vision/Speech (Heavy)
-```
-yt-dlp
-opencv-python
-ultralytics
-whisper
-ffmpeg
-geopy
-```
-> ⚠️ May require a GPU — use Google Colab if needed.
+| Variable | Where | Description |
+|----------|-------|-------------|
+| `EXPO_PUBLIC_API_URL` | `.env` (frontend) | Base URL of the FastAPI backend |
 
 ---
 
-## 🌿 GitHub Workflow
+## Known Limitations (Current MVP)
 
-### Branches
+These are documented issues to fix before production deployment:
 
-| Branch | Purpose |
-|---|---|
-| `main` | Stable, reviewed code only |
-| `pair-a` | Pair A working branch |
-| `pair-b` | Pair B working branch |
-| `trio-c` | Trio C working branch |
-| `pair-d` | Pair D working branch |
-
-### Daily Workflow
-
-**Before starting work:**
-```bash
-git pull origin <your-branch>
-```
-
-**After making changes:**
-```bash
-git add .
-git commit -m "Clear, descriptive message"
-git push origin <your-branch>
-```
-
-### Commit Message Guidelines
-
-| ✅ Good | ❌ Bad |
-|---|---|
-| `Add YOLO-based issue detection` | `update` |
-| `Fix location resolution bug` | `changes` |
-
-### Pull Requests
-
-- Required before merging into `main`
-- Must be reviewed and approved by at least one teammate
-
-### Merge Checklist
-
-Only merge when:
-- [ ] Code runs without errors
-- [ ] No breaking changes introduced
-- [ ] Compatible with the shared schema
-
-### Resolving Merge Conflicts
-
-Conflicts occur when two people edit the same file. To resolve:
-1. Open the conflicted file
-2. Manually choose the correct code
-3. Remove conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
-4. Re-commit the resolved file
+- **In-memory job store** — all jobs are lost on server restart. Replace with Redis or a database.
+- **No file size limit** — the server accepts uploads of any size. Large files will exhaust RAM.
+- **No authentication** — any client can submit complaints or query job IDs.
+- **No file cleanup** — uploaded videos accumulate indefinitely on disk.
+- **TasksScreen crashes if opened without a job** — navigating directly to the Processing tab without submitting a complaint will crash the app.
+- **PDF served as filesystem path** — the result returns a raw server path, not a downloadable URL.
 
 ---
 
-## ⚠️ Important Rules
+## Android Permissions
 
-1. **Always pull before working** — prevents overwriting others' changes.
-2. **Do not modify other teams' folders** — avoids unnecessary conflicts.
-3. **Follow the schema strictly** — breaking the schema breaks the entire pipeline.
-4. **Test your tool independently** — each tool should work as: `input → output`.
-5. **Keep commits small and frequent** — easier to debug and merge.
+Declared in `app.json` and requested at runtime:
 
----
-
-## 🚀 Development Order
-
-1. Set up the environment
-2. Finalize the context schema
-3. Build tools independently
-4. Start integration early
-5. Test the end-to-end pipeline
+| Permission | Usage |
+|-----------|-------|
+| `CAMERA` | Video recording |
+| `RECORD_AUDIO` | Video audio capture |
+| `ACCESS_FINE_LOCATION` | GPS coordinates for complaint location |
 
 ---
 
-## 🧠 Final Note
+## Dependencies
 
-> This system works only if:
-> **Clear structure + Shared schema + Clean collaboration = Successful integration**
+### Frontend
+
+| Package | Purpose |
+|---------|---------|
+| `expo-video` | Video playback in preview |
+| `expo-image-picker` | Camera + gallery access |
+| `expo-location` | GPS coordinates |
+| `expo-audio` | Microphone permission |
+| `lucide-react-native` | Icons |
+| `@react-navigation/bottom-tabs` | Tab navigation |
+
+### Backend
+
+| Package | Purpose |
+|---------|---------|
+| `fastapi` | Web framework |
+| `uvicorn` | ASGI server |
+| `python-multipart` | Multipart form parsing |
+| `reportlab` | PDF generation (placeholder) |
+
+---
+
+## Contributing
+
+This project is structured so the backend agent and the mobile frontend can be developed independently. The contract between them is the `/process` and `/jobs/:id` API — as long as those responses match the schema above, either side can be swapped out.
+
+When replacing the agent, update `run_agent()` in `main.py`. When updating the result UI, update `TasksScreen.jsx`. The upload and polling logic does not need to change.
