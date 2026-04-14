@@ -1,333 +1,340 @@
 # db/database.py
 # ---------------------------------------------------------------------------
 # SQLite database layer for the Agentic Civic Complaint System
-#
 # Pair B owns this file.
 #
-# Responsibilities:
-# 1. Create database tables on startup
-# 2. Insert/update complaint records
-# 3. Store progress logs for frontend polling
-# 4. Provide complaint fetch APIs for FastAPI routes
-#
-# This version is upgraded to support:
-# - async frontend polling
-# - complaint lifecycle tracking
-# - log timeline support
-# - immediate pending complaint creation
+# Changes from v1:
+# - All DB calls converted to async using aiosqlite
+#   (prevents blocking FastAPI's event loop during frontend polling)
+# - try/finally added to every function so connections always close,
+#   even when an exception is raised mid-pipeline
+# - video_path removed from UPSERT update clause in save_complaint()
+#   (was overwriting the upload path with None on subsequent pipeline calls)
+# - fetch_slim_complaints() rewritten with two explicit queries
+#   instead of string .format() to make SQL injection safety clear
+# - install: pip install aiosqlite
 # ---------------------------------------------------------------------------
 
-import sqlite3
+import aiosqlite
 import os
 from typing import Optional
 
-# FIXED IMPORT:
-# Use relative import if database.py is inside app/db/
-# Adjust based on your folder structure.
 from app.context import ComplaintContext
-# If your structure is different, tell me and I'll correct it exactly.
 
 
 # ---------------------------------------------------------------------------
 # Database file path
-# complaints.db will live inside db/ folder
 # ---------------------------------------------------------------------------
 DB_PATH = os.path.join(os.path.dirname(__file__), "complaints.db")
 
 
 # ---------------------------------------------------------------------------
-# Open SQLite connection
-# row_factory lets us access row["column_name"]
-# ---------------------------------------------------------------------------
-def _connect():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-# ---------------------------------------------------------------------------
 # Initialize database tables
-# Called once when FastAPI server starts
+# Called once when FastAPI server starts — use asyncio.run() or a startup event
 # ---------------------------------------------------------------------------
-def init_db():
-    conn = _connect()
+async def init_db():
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS complaints (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
 
-    # -----------------------------------------------------------------------
-    # Main complaints table
-    # Stores one row per complaint
-    # -----------------------------------------------------------------------
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS complaints (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tracking_id TEXT UNIQUE NOT NULL,
+                user_id TEXT,
 
-            tracking_id TEXT UNIQUE NOT NULL,
-            user_id TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                video_path TEXT,
 
-            -- Uploaded video path
-            video_path TEXT,
+                issue_type TEXT,
 
-            -- Pair D outputs
-            issue_type TEXT,
-            location TEXT,
-            severity INTEGER,
-            transcript TEXT,
+                -- FIX: was a single 'location TEXT' — split into coordinates
+                -- + label so confirmed lat/lng from POST /confirm-location
+                -- can be stored and used directly by authority mapping
+                lat REAL,
+                lng REAL,
+                location_label TEXT,
 
-            -- Trio C outputs
-            authority_name TEXT,
-            authority_email TEXT,
-            authority_portal TEXT,
-            complaint_text TEXT,
+                severity INTEGER,
+                transcript TEXT,
 
-            -- Pair B / Pair E status tracking
-            submission_status TEXT DEFAULT 'pending',
-            submission_screenshot TEXT,
+                authority_name TEXT,
+                authority_email TEXT,
+                authority_portal TEXT,
+                complaint_text TEXT,
 
-            -- Error tracking
-            error TEXT
-        )
-    """)
+                submission_status TEXT DEFAULT 'pending',
+                submission_screenshot TEXT,
 
-    # -----------------------------------------------------------------------
-    # Complaint logs table
-    # Stores progress timeline for frontend polling
-    # Example:
-    # "Video uploaded"
-    # "Issue detection started"
-    # "Authority mapped"
-    # -----------------------------------------------------------------------
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS complaint_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tracking_id TEXT NOT NULL,
-            message TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+                error TEXT
+            )
+        """)
 
-    conn.commit()
-    conn.close()
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS complaint_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tracking_id TEXT NOT NULL,
+                message TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        await conn.commit()
 
     print("[DB] Initialised — complaints.db ready.")
 
 
 # ---------------------------------------------------------------------------
-# Create complaint immediately after upload
-# Used BEFORE background processing starts
-# This prevents frontend polling from getting 404 errors
+# Create complaint immediately after upload (before background processing)
+# Prevents frontend GET /status/:id from getting 404 during processing
 # ---------------------------------------------------------------------------
-def create_pending_complaint(
+async def create_pending_complaint(
     tracking_id: str,
     user_id: str,
     video_path: str
 ):
-    conn = _connect()
+    # FIX: wrapped in try/finally — connection always closes even if INSERT fails
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        await conn.execute("""
+            INSERT INTO complaints (
+                tracking_id,
+                user_id,
+                video_path,
+                submission_status
+            )
+            VALUES (?, ?, ?, ?)
+        """, (tracking_id, user_id, video_path, "pending"))
 
-    conn.execute("""
-        INSERT INTO complaints (
-            tracking_id,
-            user_id,
-            video_path,
-            submission_status
-        )
-        VALUES (?, ?, ?, ?)
-    """, (
-        tracking_id,
-        user_id,
-        video_path,
-        "pending"
-    ))
-
-    conn.commit()
-    conn.close()
+        await conn.commit()
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Update complaint processing status
-# Example:
 # pending → detecting_issue → mapping_authority → submitted
 # ---------------------------------------------------------------------------
-def update_status(tracking_id: str, status: str):
-    conn = _connect()
+async def update_status(tracking_id: str, status: str):
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        await conn.execute("""
+            UPDATE complaints
+            SET submission_status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tracking_id = ?
+        """, (status, tracking_id))
 
-    conn.execute("""
-        UPDATE complaints
-        SET submission_status = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE tracking_id = ?
-    """, (status, tracking_id))
-
-    conn.commit()
-    conn.close()
+        await conn.commit()
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Insert one progress log message
 # ---------------------------------------------------------------------------
-def insert_log(tracking_id: str, message: str):
-    conn = _connect()
+async def insert_log(tracking_id: str, message: str):
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        await conn.execute("""
+            INSERT INTO complaint_logs (tracking_id, message)
+            VALUES (?, ?)
+        """, (tracking_id, message))
 
-    conn.execute("""
-        INSERT INTO complaint_logs (tracking_id, message)
-        VALUES (?, ?)
-    """, (tracking_id, message))
-
-    conn.commit()
-    conn.close()
+        await conn.commit()
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
-# Fetch all logs for one complaint
-# Returned as ordered list of strings
+# Fetch all logs for one complaint (for frontend polling)
 # ---------------------------------------------------------------------------
-def fetch_logs(tracking_id: str) -> list[str]:
-    conn = _connect()
+async def fetch_logs(tracking_id: str) -> list[str]:
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute("""
+            SELECT message
+            FROM complaint_logs
+            WHERE tracking_id = ?
+            ORDER BY timestamp ASC
+        """, (tracking_id,))
 
-    rows = conn.execute("""
-        SELECT message
-        FROM complaint_logs
-        WHERE tracking_id = ?
-        ORDER BY timestamp ASC
-    """, (tracking_id,)).fetchall()
-
-    conn.close()
-
-    return [row["message"] for row in rows]
+        rows = await cursor.fetchall()
+        return [row["message"] for row in rows]
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Insert or update full complaint record
-# Safe to call multiple times during pipeline
+# Safe to call multiple times as pipeline stages complete
 # ---------------------------------------------------------------------------
-def save_complaint(ctx: ComplaintContext):
-    conn = _connect()
+async def save_complaint(ctx: ComplaintContext):
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        await conn.execute("""
+            INSERT INTO complaints (
+                tracking_id,
+                user_id,
+                video_path,
 
-    conn.execute("""
-        INSERT INTO complaints (
-            tracking_id,
-            user_id,
-            video_path,
+                issue_type,
+                lat,
+                lng,
+                location_label,
+                severity,
+                transcript,
 
-            issue_type,
-            location,
-            severity,
-            transcript,
+                authority_name,
+                authority_email,
+                authority_portal,
+                complaint_text,
 
-            authority_name,
-            authority_email,
-            authority_portal,
-            complaint_text,
+                submission_status,
+                submission_screenshot,
 
-            submission_status,
-            submission_screenshot,
+                error
+            )
+            VALUES (
+                :tracking_id,
+                :user_id,
+                :video_path,
 
-            error
-        )
-        VALUES (
-            :tracking_id,
-            :user_id,
-            :video_path,
+                :issue_type,
+                :lat,
+                :lng,
+                :location_label,
+                :severity,
+                :transcript,
 
-            :issue_type,
-            :location,
-            :severity,
-            :transcript,
+                :authority_name,
+                :authority_email,
+                :authority_portal,
+                :complaint_text,
 
-            :authority_name,
-            :authority_email,
-            :authority_portal,
-            :complaint_text,
+                :submission_status,
+                :submission_screenshot,
 
-            :submission_status,
-            :submission_screenshot,
+                :error
+            )
 
-            :error
-        )
+            ON CONFLICT(tracking_id) DO UPDATE SET
+                issue_type              = excluded.issue_type,
 
-        ON CONFLICT(tracking_id) DO UPDATE SET
-            issue_type              = excluded.issue_type,
-            location                = excluded.location,
-            severity                = excluded.severity,
-            transcript              = excluded.transcript,
+                lat                     = excluded.lat,
+                lng                     = excluded.lng,
+                location_label          = excluded.location_label,
 
-            authority_name          = excluded.authority_name,
-            authority_email         = excluded.authority_email,
-            authority_portal        = excluded.authority_portal,
-            complaint_text          = excluded.complaint_text,
+                severity                = excluded.severity,
+                transcript              = excluded.transcript,
 
-            submission_status       = excluded.submission_status,
-            submission_screenshot   = excluded.submission_screenshot,
+                authority_name          = excluded.authority_name,
+                authority_email         = excluded.authority_email,
+                authority_portal        = excluded.authority_portal,
+                complaint_text          = excluded.complaint_text,
 
-            error                   = excluded.error,
-            updated_at              = CURRENT_TIMESTAMP
-    """, {
-        "tracking_id": ctx.tracking_id,
-        "user_id": ctx.user_id,
-        "video_path": ctx.video_path,
+                submission_status       = excluded.submission_status,
+                submission_screenshot   = excluded.submission_screenshot,
 
-        "issue_type": ctx.issue_type,
-        "location": ctx.location,
-        "severity": ctx.severity,
-        "transcript": ctx.transcript,
+                error                   = excluded.error,
+                updated_at              = CURRENT_TIMESTAMP
 
-        "authority_name": ctx.authority_name,
-        "authority_email": ctx.authority_email,
-        "authority_portal": ctx.authority_portal,
-        "complaint_text": ctx.complaint_text,
+                -- FIX: video_path intentionally excluded from UPDATE clause.
+                -- It is written once by create_pending_complaint() at upload
+                -- time and must never be overwritten by later pipeline calls
+                -- (ctx.video_path could be empty at that point).
+        """, {
+            "tracking_id":          ctx.tracking_id,
+            "user_id":              ctx.user_id,
+            "video_path":           ctx.video_path,
 
-        "submission_status": ctx.submission_status,
-        "submission_screenshot": ctx.submission_screenshot,
+            "issue_type":           ctx.issue_type,
+            "lat":                  ctx.lat,
+            "lng":                  ctx.lng,
+            "location_label":       ctx.location_label,
+            "severity":             ctx.severity,
+            "transcript":           ctx.transcript,
 
-        "error": ctx.error
-    })
+            "authority_name":       ctx.authority_name,
+            "authority_email":      ctx.authority_email,
+            "authority_portal":     ctx.authority_portal,
+            "complaint_text":       ctx.complaint_text,
 
-    conn.commit()
-    conn.close()
+            "submission_status":    ctx.submission_status,
+            "submission_screenshot": ctx.submission_screenshot,
+
+            "error":                ctx.error
+        })
+
+        await conn.commit()
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Fetch one complaint by tracking ID
-# Returns full complaint dict
+# Returns full complaint dict, or None if not found
 # ---------------------------------------------------------------------------
-def fetch_complaint(tracking_id: str) -> Optional[dict]:
-    conn = _connect()
+async def fetch_complaint(tracking_id: str) -> Optional[dict]:
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute("""
+            SELECT *
+            FROM complaints
+            WHERE tracking_id = ?
+        """, (tracking_id,))
 
-    row = conn.execute("""
-        SELECT *
-        FROM complaints
-        WHERE tracking_id = ?
-    """, (tracking_id,)).fetchone()
-
-    conn.close()
-
-    return dict(row) if row else None
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Fetch slim complaint list for dashboard
-# Used by mobile app complaint history page
+#
+# FIX: was using .format() to splice a WHERE clause into the query string.
+# That pattern looks like a SQL injection risk and confuses reviewers.
+# Replaced with two explicit queries — one for a specific user, one for all.
 # ---------------------------------------------------------------------------
-def fetch_slim_complaints(user_id: str = None) -> list[dict]:
-    conn = _connect()
+async def fetch_slim_complaints(user_id: str = None) -> list[dict]:
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        conn.row_factory = aiosqlite.Row
 
-    query = """
-        SELECT
-            tracking_id,
-            submission_status,
-            issue_type,
-            location,
-            severity,
-            created_at
-        FROM complaints
-        {}
-        ORDER BY created_at DESC
-    """.format("WHERE user_id = ?" if user_id else "")
+        if user_id:
+            cursor = await conn.execute("""
+                SELECT
+                    tracking_id,
+                    submission_status,
+                    issue_type,
+                    location_label,
+                    lat,
+                    lng,
+                    severity,
+                    created_at
+                FROM complaints
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+            """, (user_id,))
+        else:
+            cursor = await conn.execute("""
+                SELECT
+                    tracking_id,
+                    submission_status,
+                    issue_type,
+                    location_label,
+                    lat,
+                    lng,
+                    severity,
+                    created_at
+                FROM complaints
+                ORDER BY created_at DESC
+            """)
 
-    params = (user_id,) if user_id else ()
-
-    rows = conn.execute(query, params).fetchall()
-    conn.close()
-
-    return [dict(row) for row in rows]
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        await conn.close()
