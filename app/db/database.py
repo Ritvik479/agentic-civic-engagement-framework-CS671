@@ -131,6 +131,28 @@ async def update_status(tracking_id: str, status: str):
 
 
 # ---------------------------------------------------------------------------
+# Update confirmed lat/lng from POST /confirm-location
+# Called by api.py after the user corrects their location on the mobile app.
+# Persists coordinates to the complaints table so authority mapping
+# can use them directly — this is the source of truth for location.
+# ---------------------------------------------------------------------------
+async def update_location(tracking_id: str, lat: float, lng: float):
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        await conn.execute("""
+            UPDATE complaints
+            SET lat        = ?,
+                lng        = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE tracking_id = ?
+        """, (lat, lng, tracking_id))
+
+        await conn.commit()
+    finally:
+        await conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Insert one progress log message
 # ---------------------------------------------------------------------------
 async def insert_log(tracking_id: str, message: str):
