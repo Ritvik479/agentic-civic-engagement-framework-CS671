@@ -27,7 +27,7 @@ def get_escalation_mapping(state: str, district: str, issue: str, severity_score
     final_level = min(base_level + time_bump, 4) # Cap at level 4 (CPGRAMS)
 
     # 3. Fetch the Primary Contact using your teammate's lookup script
-    primary_contact = get_routing_authority(state, district, issue, escalation_level=final_level)
+    primary_contact = get_authorities(state, district, issue, escalation_level=final_level)
     
     # 4. Determine who to CC (the next level up, if applicable)
     cc_contact = {}
