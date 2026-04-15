@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     print("[Server] Starting up...")
 
     # Initialize SQLite database
-    init_db()
+    await init_db()
 
     print("[Server] Database initialized.")
     print("[Server] All endpoints live at /api/...")
@@ -64,7 +64,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,   # or replace "*" with your frontend's actual origin
     allow_methods=["*"],
     allow_headers=["*"],
 )

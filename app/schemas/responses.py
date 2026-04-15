@@ -75,7 +75,9 @@ class ComplaintDetailResponse(BaseModel):
     video_path: Optional[str]
 
     issue_type: Optional[str]
-    location: Optional[str]
+    lat: Optional[float]
+    lng: Optional[float]
+    location_label: Optional[str]
     severity: Optional[int]
     transcript: Optional[str]
 
@@ -98,7 +100,9 @@ class ComplaintSummaryItem(BaseModel):
     tracking_id: str
     submission_status: str
     issue_type: Optional[str]
-    location: Optional[str]
+    lat: Optional[float]
+    lng: Optional[float]
+    location_label: Optional[str]
     severity: Optional[int]
     created_at: Optional[str]
 
