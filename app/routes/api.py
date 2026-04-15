@@ -60,8 +60,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 async def process_video(
     background_tasks: BackgroundTasks,
     video: UploadFile = File(...),
-    lat: float = Form(...),
-    lng: float = Form(...),
+    state: str = Form(...),
+    district: str = Form(...),
     user_id: str = Form(default="anonymous"),
 ):
     # -----------------------------------------------------------------------
@@ -127,8 +127,8 @@ async def process_video(
         run_agent,
         video_path=abs_path,
         tracking_id=tracking_id,
-        user_lat=lat,
-        user_lng=lng,
+        user_state=state,
+        user_district=district,
         user_id=user_id
     )
 
@@ -190,13 +190,13 @@ async def confirm_location(data: ConfirmLocationRequest):
     # FIX: persist coordinates to complaints table, not just logs
     await update_location(
         tracking_id=data.id,
-        lat=data.final_lat,
-        lng=data.final_lng
+        state=data.final_state,
+        district=data.final_district,
+        location_label=f"{data.final_district}, {data.final_state}"
     )
-
     await insert_log(
         data.id,
-        f"Location confirmed by user: ({data.final_lat}, {data.final_lng})"
+        f"Location confirmed by user: {data.final_district}, {data.final_state}"
     )
 
     await update_status(data.id, "authority_mapped")

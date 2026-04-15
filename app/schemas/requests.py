@@ -26,5 +26,5 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 class ConfirmLocationRequest(BaseModel):
     id: str = Field(..., description="Complaint tracking ID")
-    final_lat: float = Field(..., description="Confirmed latitude")
-    final_lng: float = Field(..., description="Confirmed longitude")
+    final_state: str = Field(..., description="Confirmed state name")
+    final_district: str = Field(..., description="Confirmed district name")

@@ -29,8 +29,8 @@ class ComplaintContext:
     # Frontend sends confirmed lat/lng via POST /confirm-location.
     # Split into three fields so authority mapping can use coordinates
     # directly without parsing a string like "Shimla, HP".
-    lat: Optional[float] = None
-    lng: Optional[float] = None
+    state: str = ""
+    district: str = ""
     location_label: str = ""       # human-readable label, e.g. "Shimla, HP"
 
     # FIX: severity now validated — was unconstrained int (could be -1 or 999)

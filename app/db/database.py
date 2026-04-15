@@ -51,8 +51,8 @@ async def init_db():
                 -- FIX: was a single 'location TEXT' — split into coordinates
                 -- + label so confirmed lat/lng from POST /confirm-location
                 -- can be stored and used directly by authority mapping
-                lat REAL,
-                lng REAL,
+                state TEXT,
+                district TEXT,
                 location_label TEXT,
 
                 severity INTEGER,
@@ -131,22 +131,22 @@ async def update_status(tracking_id: str, status: str):
 
 
 # ---------------------------------------------------------------------------
-# Update confirmed lat/lng from POST /confirm-location
+# Update confirmed state/district from POST /confirm-location
 # Called by api.py after the user corrects their location on the mobile app.
-# Persists coordinates to the complaints table so authority mapping
+# Persists location information to the complaints table so authority mapping
 # can use them directly — this is the source of truth for location.
 # ---------------------------------------------------------------------------
-async def update_location(tracking_id: str, lat: float, lng: float):
+async def update_location(tracking_id: str, state: str, district: str, location_label: str = ""):
     conn = await aiosqlite.connect(DB_PATH)
     try:
         await conn.execute("""
             UPDATE complaints
-            SET lat        = ?,
-                lng        = ?,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE tracking_id = ?
-        """, (lat, lng, tracking_id))
-
+            SET state          = ?,
+                district       = ?,
+                location_label = ?,
+                updated_at     = CURRENT_TIMESTAMP
+            WHERE tracking_id  = ?
+        """, (state, district, location_label, tracking_id))
         await conn.commit()
     finally:
         await conn.close()
@@ -202,8 +202,8 @@ async def save_complaint(ctx: ComplaintContext):
                 video_path,
 
                 issue_type,
-                lat,
-                lng,
+                state,
+                district,
                 location_label,
                 severity,
                 transcript,
@@ -224,8 +224,8 @@ async def save_complaint(ctx: ComplaintContext):
                 :video_path,
 
                 :issue_type,
-                :lat,
-                :lng,
+                :state,
+                :district,
                 :location_label,
                 :severity,
                 :transcript,
@@ -244,8 +244,8 @@ async def save_complaint(ctx: ComplaintContext):
             ON CONFLICT(tracking_id) DO UPDATE SET
                 issue_type              = excluded.issue_type,
 
-                lat                     = excluded.lat,
-                lng                     = excluded.lng,
+                state                   = excluded.state,
+                district                = excluded.district,
                 location_label          = excluded.location_label,
 
                 severity                = excluded.severity,
@@ -272,8 +272,8 @@ async def save_complaint(ctx: ComplaintContext):
             "video_path":           ctx.video_path,
 
             "issue_type":           ctx.issue_type,
-            "lat":                  ctx.lat,
-            "lng":                  ctx.lng,
+            "state":                ctx.state,
+            "district":             ctx.district,
             "location_label":       ctx.location_label,
             "severity":             ctx.severity,
             "transcript":           ctx.transcript,
@@ -332,9 +332,9 @@ async def fetch_slim_complaints(user_id: str = None) -> list[dict]:
                     tracking_id,
                     submission_status,
                     issue_type,
+                    state,
+                    district,
                     location_label,
-                    lat,
-                    lng,
                     severity,
                     created_at
                 FROM complaints
@@ -347,9 +347,9 @@ async def fetch_slim_complaints(user_id: str = None) -> list[dict]:
                     tracking_id,
                     submission_status,
                     issue_type,
+                    state,
+                    district,
                     location_label,
-                    lat,
-                    lng,
                     severity,
                     created_at
                 FROM complaints

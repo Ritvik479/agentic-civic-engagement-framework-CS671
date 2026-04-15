@@ -37,8 +37,8 @@ from app.agents.submission_agent import submit_complaint
 async def run_agent(
     video_path: str,
     tracking_id: str,
-    user_lat: float = 0.0,      # FIX: was user_location: str — must match api.py
-    user_lng: float = 0.0,
+    user_state: str = "",
+    user_district: str = "",
     user_id: str = "anonymous"
 ):
     """
@@ -63,14 +63,14 @@ async def run_agent(
 
     # FIX: write frontend-supplied coordinates immediately so they're
     # available as fallback if Pair D cannot extract location from video
-    ctx.lat = user_lat
-    ctx.lng = user_lng
+    ctx.state = user_state
+    ctx.district = user_district
 
     print(f"\n{'='*60}")
     print("[Orchestrator] Pipeline started")
     print(f"[Tracking ID] {tracking_id}")
     print(f"[Video]       {video_path}")
-    print(f"[Location]    {user_lat}, {user_lng}")
+    print(f"[Location]    {user_district}, {user_state}")
     print(f"{'='*60}")
 
     try:
@@ -92,26 +92,24 @@ async def run_agent(
 
         pair_d_result = detect_issue_and_location(
             video_path=video_path,
-            user_lat=user_lat,
-            user_lng=user_lng
+            user_state=user_state,
+            user_district=user_district
         )
 
         ctx.issue_type = pair_d_result["issue_type"]
         ctx.severity   = pair_d_result["severity"]
         ctx.transcript = pair_d_result["transcript"]
 
-        # FIX: ctx.location no longer exists — use lat/lng/location_label
-        # Only overwrite frontend coordinates if Pair D found better ones
-        if pair_d_result.get("lat") is not None:
-            ctx.lat = pair_d_result["lat"]
-        if pair_d_result.get("lng") is not None:
-            ctx.lng = pair_d_result["lng"]
+        if pair_d_result.get("state"):
+            ctx.state = pair_d_result["state"]
+        if pair_d_result.get("district"):
+            ctx.district = pair_d_result["district"]
         ctx.location_label = pair_d_result.get("location_label", "")
 
         await save_complaint(ctx)
         await insert_log(
             tracking_id,
-            f"Issue detected: {ctx.issue_type} at {ctx.location_label or f'({ctx.lat}, {ctx.lng})'}"
+            f"Issue detected: {ctx.issue_type} at {ctx.location_label or f'{ctx.district}, {ctx.state}'}"
         )
 
         print(
@@ -132,8 +130,8 @@ async def run_agent(
 
         authority = lookup_authority(
             ctx.issue_type,
-            ctx.lat,
-            ctx.lng
+            ctx.state,
+            ctx.district
         )
 
         ctx.authority_name   = authority["authority_name"]
