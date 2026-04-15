@@ -11,16 +11,22 @@ if not api_key:
 
 client = Groq(api_key=api_key)
 
-VALID_SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 def calculate_severity(issue: str, description: str, location: str) -> dict:
     """
     Calculates severity of a civic complaint issue.
-    
+
+    Severity Scale:
+        1 = Minor issue, no immediate danger
+        2 = Moderate issue, affects quality of life
+        3 = Serious violation, health/environment risk
+        4 = Critical danger, urgent action needed
+        5 = Reserved for system escalation override only
+
     Returns:
         {
-            "severity": "HIGH",
-            "success": True
+            "severity": int,
+            "success": bool
         }
     """
 
@@ -31,16 +37,15 @@ Issue: {issue}
 Description: {description}
 Location: {location}
 
-Classify the severity into exactly one of these:
-LOW, MEDIUM, HIGH, CRITICAL
+Classify severity into exactly one integer:
 
-Rules:
-- LOW    → Minor issue, no immediate danger
-- MEDIUM → Affects quality of life, needs attention
-- HIGH   → Serious violation, health risk
-- CRITICAL → Immediate danger, urgent action needed
+1 = Minor issue, no immediate danger
+2 = Moderate issue, affects quality of life
+3 = Serious violation, health/environment risk
+4 = Critical danger, urgent action needed
 
-Return ONLY the single severity word. Nothing else.
+Return ONLY one digit: 1, 2, 3, or 4.
+Nothing else.
 """
 
     try:
@@ -49,28 +54,31 @@ Return ONLY the single severity word. Nothing else.
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a severity classifier. Reply with ONE word only: LOW, MEDIUM, HIGH, or CRITICAL."
+                    "content": (
+                        "You are a severity classifier. "
+                        "Reply with ONLY one digit: 1, 2, 3, or 4."
+                    )
                 },
                 {
                     "role": "user",
                     "content": prompt
                 }
             ],
-            temperature=0.1  # low temperature = more consistent output
+            temperature=0.1
         )
 
-        raw_output = response.choices[0].message.content.strip().upper()
+        raw_output = response.choices[0].message.content.strip()
 
-        # Extract valid severity even if LLM adds extra text
+        # Extract first valid digit
         severity = None
-        for valid in VALID_SEVERITIES:
-            if valid in raw_output:
-                severity = valid
+        for ch in raw_output:
+            if ch in {"1", "2", "3", "4"}:
+                severity = int(ch)
                 break
 
-        # Fallback if nothing matched
-        if not severity:
-            severity = "MEDIUM"
+        # Safe fallback
+        if severity is None:
+            severity = 2
 
         return {
             "severity": severity,
@@ -79,7 +87,8 @@ Return ONLY the single severity word. Nothing else.
 
     except Exception as e:
         print(f"Severity scoring failed: {e}")
+
         return {
-            "severity": "MEDIUM",  # safe default
+            "severity": 2,   # moderate fallback
             "success": False
         }
