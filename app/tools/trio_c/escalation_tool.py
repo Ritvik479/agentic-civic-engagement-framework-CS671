@@ -1,7 +1,4 @@
 import os
-
-# Import the lookup function teammate built. 
-# (Note: If they named the function something else, just update the import name below)
 from authority_lookup import get_authorities
 
 def get_escalation_mapping(state: str, district: str, issue: str, severity_score: int, days_unresolved: int = 0) -> dict:
