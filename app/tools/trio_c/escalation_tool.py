@@ -1,6 +1,3 @@
-# escalation_tool.py
-
-# Import the exact function created by your teammate
 from authority_lookup import get_authorities
 
 def get_escalation_mapping(state: str, district: str, issue: str, severity_level: str, days_unresolved: int = 0) -> dict:
@@ -28,7 +25,6 @@ def get_escalation_mapping(state: str, district: str, issue: str, severity_level
     final_level = min(base_level + time_bump, 4) # Cap at level 4 (CPGRAMS)
 
     # 3. Fetch all Authorities for the given region and issue
-    # Calling the O(1) dictionary lookup built by your teammate
     authorities = get_authorities(state, district, issue)
     
     # Handle the error format defined in authority_lookup.py
