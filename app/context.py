@@ -2,17 +2,10 @@
 # ---------------------------------------------------------------------------
 # Shared complaint context object passed through all agents
 # Pair B owns this file
-#
-# Changes from v1:
-# - location split into lat, lng (float) + location_label (str)
-#   so confirmed coordinates from POST /confirm-location can be stored
-#   without string parsing
-# - severity validated in __post_init__ to enforce 0-5 range
 # ---------------------------------------------------------------------------
 
 from dataclasses import dataclass, field
 from typing import Optional
-
 
 @dataclass
 class ComplaintContext:
@@ -24,11 +17,6 @@ class ComplaintContext:
 
     # Pair D outputs
     issue_type: str = ""
-
-    # FIX: location was a plain string — cannot store lat/lng separately.
-    # Frontend sends confirmed lat/lng via POST /confirm-location.
-    # Split into three fields so authority mapping can use coordinates
-    # directly without parsing a string like "Shimla, HP".
     state: str = ""
     district: str = ""
     location_label: str = ""       # human-readable label, e.g. "Shimla, HP"
@@ -43,7 +31,7 @@ class ComplaintContext:
     authority_portal: str = ""
     complaint_text: str = ""
 
-    # Pair B / Pair E outputs
+    # Pair B outputs
     submission_status: str = "pending"
     submission_screenshot: str = ""
 

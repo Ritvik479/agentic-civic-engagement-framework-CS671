@@ -1,17 +1,6 @@
 # app/orchestrator.py
 # ---------------------------------------------------------------------------
 # OWNED BY: Pair B
-#
-# Changes from v1:
-# - run_agent converted to async def — all DB calls now awaited
-# - Signature changed from user_location: str to user_lat/user_lng: float
-#   to match api.py and context.py
-# - ctx.location replaced with ctx.lat, ctx.lng, ctx.location_label
-#   throughout (context.py no longer has a location field)
-# - user_lat/user_lng written to ctx immediately after creation,
-#   so frontend-supplied coordinates are available as fallback if
-#   Pair D's vision agent cannot extract location from video
-# - lookup_authority now receives lat/lng floats instead of location string
 # ---------------------------------------------------------------------------
 
 import traceback
@@ -25,9 +14,20 @@ from app.db.database import (
     update_status
 )
 
-from app.agents.vision_speech_agent import detect_issue_and_location
-from app.agents.authority_llm_agent import lookup_authority, draft_complaint
-from app.agents.submission_agent import submit_complaint
+# ---------------------------------------------------------------------------
+# Correct tool imports
+# ---------------------------------------------------------------------------
+
+# Pair D tools
+from app.tools.pair_d.vision import detect_issue_and_location
+
+# Trio C tools
+from app.tools.trio_c.authority_lookup_tool import lookup_authority
+from app.tools.trio_c.severity_score_tool import calculate_severity
+from app.tools.trio_c.complaint_draft_tool import draft_complaint
+
+# Pair B tools
+from app.tools.pair_b.submission_agent import submit_complaint
 
 
 # ---------------------------------------------------------------------------
@@ -43,13 +43,6 @@ async def run_agent(
 ):
     """
     Runs full complaint pipeline as an async background task.
-
-    Args:
-        video_path  : absolute path to uploaded video
-        tracking_id : generated in api.py before pipeline starts
-        user_lat    : latitude from frontend FormData
-        user_lng    : longitude from frontend FormData
-        user_id     : uploader identifier
     """
 
     # -----------------------------------------------------------------------
@@ -61,8 +54,6 @@ async def run_agent(
         video_path=video_path
     )
 
-    # FIX: write frontend-supplied coordinates immediately so they're
-    # available as fallback if Pair D cannot extract location from video
     ctx.state = user_state
     ctx.district = user_district
 
@@ -77,13 +68,6 @@ async def run_agent(
 
         # ================================================================
         # STEP 1 — Pair D: Vision + Speech
-        # Expects pair_d_result to contain:
-        #   issue_type: str
-        #   lat: float  (may be None if agent can't detect location)
-        #   lng: float
-        #   location_label: str  (e.g. "Shimla, HP")
-        #   severity: int (0–5)
-        #   transcript: str
         # ================================================================
         await update_status(tracking_id, "detecting_issue")
         await insert_log(tracking_id, "Issue detection started.")
@@ -97,19 +81,37 @@ async def run_agent(
         )
 
         ctx.issue_type = pair_d_result["issue_type"]
-        ctx.severity   = pair_d_result["severity"]
         ctx.transcript = pair_d_result["transcript"]
 
         if pair_d_result.get("state"):
             ctx.state = pair_d_result["state"]
         if pair_d_result.get("district"):
             ctx.district = pair_d_result["district"]
+
         ctx.location_label = pair_d_result.get("location_label", "")
 
+        # ================================================================
+        # STEP 1.5 — Trio C: Severity Scoring
+        # ================================================================
+        await insert_log(tracking_id, "Severity scoring started.")
+
+        print("\n[Step 1.5] Calculating severity...")
+
+        severity_result = await calculate_severity(
+            issue=ctx.issue_type,
+            description=ctx.transcript,
+            location=ctx.location_label or f"{ctx.district}, {ctx.state}"
+        )
+
+        ctx.severity = severity_result["severity"]
+
         await save_complaint(ctx)
+
         await insert_log(
             tracking_id,
-            f"Issue detected: {ctx.issue_type} at {ctx.location_label or f'{ctx.district}, {ctx.state}'}"
+            f"Issue detected: {ctx.issue_type} at "
+            f"{ctx.location_label or f'{ctx.district}, {ctx.state}'} | "
+            f"Severity {ctx.severity}/5"
         )
 
         print(
@@ -119,9 +121,6 @@ async def run_agent(
 
         # ================================================================
         # STEP 2 — Trio C: Authority Mapping
-        # FIX: pass lat/lng floats instead of ctx.location string
-        # Flag to Trio C: lookup_authority signature must accept
-        # issue_type, lat, lng instead of issue_type, location
         # ================================================================
         await update_status(tracking_id, "mapping_authority")
         await insert_log(tracking_id, "Authority mapping started.")
@@ -131,11 +130,12 @@ async def run_agent(
         authority = lookup_authority(
             ctx.issue_type,
             ctx.state,
-            ctx.district
+            ctx.district,
+            ctx.severity
         )
 
-        ctx.authority_name   = authority["authority_name"]
-        ctx.authority_email  = authority["authority_email"]
+        ctx.authority_name = authority["authority_name"]
+        ctx.authority_email = authority["authority_email"]
         ctx.authority_portal = authority["authority_portal"]
 
         await save_complaint(ctx)
@@ -168,7 +168,7 @@ async def run_agent(
         )
 
         # ================================================================
-        # STEP 4 — Pair E: Portal Submission
+        # STEP 4 — Pair B: Portal Submission
         # ================================================================
         await update_status(tracking_id, "submitting")
         await insert_log(tracking_id, "Portal submission started.")
@@ -177,7 +177,7 @@ async def run_agent(
 
         submission = submit_complaint(asdict(ctx))
 
-        ctx.submission_status     = submission["submission_status"]
+        ctx.submission_status = submission["submission_status"]
         ctx.submission_screenshot = submission["submission_screenshot"]
 
         await save_complaint(ctx)
@@ -196,15 +196,20 @@ async def run_agent(
         # ================================================================
         if ctx.submission_status == "submitted":
             await update_status(tracking_id, "submitted")
-            await insert_log(tracking_id, "Complaint submitted successfully.")
+            await insert_log(
+                tracking_id,
+                "Complaint submitted successfully."
+            )
         else:
             await update_status(tracking_id, "failed")
-            await insert_log(tracking_id, "Complaint submission failed.")
+            await insert_log(
+                tracking_id,
+                "Complaint submission failed."
+            )
 
     except Exception as e:
         # ================================================================
-        # Failure Handling — always write terminal state so frontend
-        # stops polling and shows an error instead of hanging
+        # Failure Handling
         # ================================================================
         ctx.error = str(e)
         ctx.submission_status = "failed"
