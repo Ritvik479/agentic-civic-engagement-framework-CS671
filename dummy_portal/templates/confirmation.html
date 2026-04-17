@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Complaint Filed — NagrikVaani</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Noto+Sans:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0e1117;
+      --paper: #f5f0e8;
+      --saffron: #e8680a;
+      --rule: #c8bfaa;
+      --muted: #7a7060;
+      --green: #2d6a4f;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      position: relative;
+      z-index: 1;
+      border-bottom: 2px solid var(--ink);
+      padding: 18px 48px;
+    }
+
+    .logo {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-decoration: none;
+      color: var(--ink);
+      text-transform: uppercase;
+    }
+
+    .logo span { color: var(--saffron); }
+
+    main {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 24px;
+    }
+
+    .card {
+      border: 2px solid var(--ink);
+      max-width: 560px;
+      width: 100%;
+      background: var(--paper);
+    }
+
+    .card-top {
+      background: var(--green);
+      padding: 32px 40px;
+      color: white;
+    }
+
+    .status-label {
+      font-size: 0.68rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      opacity: 0.75;
+      margin-bottom: 10px;
+    }
+
+    .card-top h1 {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.9rem;
+      font-weight: 700;
+    }
+
+    .card-body {
+      padding: 36px 40px;
+    }
+
+    .ref-block {
+      text-align: center;
+      padding: 28px;
+      border: 1px dashed var(--rule);
+      margin-bottom: 32px;
+      background: #fdfaf4;
+    }
+
+    .ref-eyebrow {
+      font-size: 0.68rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+
+    /* 
+      CRITICAL: id="complaint-ref-id" — Playwright extracts the complaint 
+      reference from exactly this element. Do not rename this ID. 
+    */
+    #complaint-ref-id {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--ink);
+    }
+
+    .info-list {
+      list-style: none;
+      margin-bottom: 32px;
+    }
+
+    .info-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--rule);
+      font-size: 0.9rem;
+    }
+
+    .info-list li:last-child { border-bottom: none; }
+
+    .info-list .key {
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .info-list .val {
+      font-weight: 400;
+      text-align: right;
+      max-width: 60%;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      flex: 1;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 14px 20px;
+      text-align: center;
+      text-decoration: none;
+      border: 2px solid var(--ink);
+      cursor: pointer;
+    }
+
+    .btn-primary { background: var(--ink); color: var(--paper); }
+    .btn-primary:hover { background: var(--saffron); border-color: var(--saffron); }
+    .btn-outline { background: transparent; color: var(--ink); }
+    .btn-outline:hover { background: var(--rule); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="/" class="logo">Nagrɪк<span>Vaani</span></a>
+  </header>
+
+  <main>
+    <div class="card">
+      <div class="card-top">
+        <div class="status-label">✓ Successfully Filed</div>
+        <h1>Complaint Registered</h1>
+      </div>
+
+      <div class="card-body">
+        <div class="ref-block">
+          <div class="ref-eyebrow">Your Complaint Reference ID</div>
+          <!-- Playwright reads from this element — do not rename the id -->
+          <div id="complaint-ref-id">{{ ref_id }}</div>
+        </div>
+
+        <ul class="info-list">
+          <li>
+            <span class="key">Status</span>
+            <span class="val">Received — Pending Review</span>
+          </li>
+          <li>
+            <span class="key">Filed On</span>
+            <span class="val" id="filed-date"></span>
+          </li>
+          <li>
+            <span class="key">Expected Response</span>
+            <span class="val">Within 72 hours</span>
+          </li>
+        </ul>
+
+        <div class="actions">
+          <a href="/complaint/status" class="btn btn-outline">Track Status</a>
+          <a href="/" class="btn btn-primary">Back to Home</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById('filed-date').textContent =
+      new Date().toLocaleString('en-IN', {
+        dateStyle: 'medium', timeStyle: 'short'
+      });
+  </script>
+
+</body>
+</html>

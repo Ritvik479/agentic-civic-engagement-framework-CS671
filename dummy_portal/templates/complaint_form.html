@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>File a Complaint — NagrikVaani</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Noto+Sans:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0e1117;
+      --paper: #f5f0e8;
+      --saffron: #e8680a;
+      --rule: #c8bfaa;
+      --muted: #7a7060;
+      --field-bg: #fdfaf4;
+      --error: #c0392b;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,0,0,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.025) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      position: relative;
+      z-index: 1;
+      border-bottom: 2px solid var(--ink);
+      padding: 18px 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-decoration: none;
+      color: var(--ink);
+      text-transform: uppercase;
+    }
+
+    .logo span { color: var(--saffron); }
+
+    .breadcrumb {
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .page-wrap {
+      position: relative;
+      z-index: 1;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 56px 24px 80px;
+    }
+
+    .page-header {
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .eyebrow {
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 2.4rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    /* ---- Form sections ---- */
+    .section-title {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 20px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .form-section {
+      margin-bottom: 40px;
+    }
+
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .field-row.full { grid-template-columns: 1fr; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    label .req { color: var(--saffron); margin-left: 2px; }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    select,
+    textarea {
+      background: var(--field-bg);
+      border: 1px solid var(--rule);
+      border-bottom: 2px solid var(--ink);
+      padding: 12px 14px;
+      font-family: 'Noto Sans', sans-serif;
+      font-size: 0.95rem;
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.15s;
+      width: 100%;
+      appearance: none;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--saffron);
+      border-bottom-color: var(--saffron);
+    }
+
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%230e1117' d='M0 0l6 8 6-8z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+      padding-right: 36px;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 140px;
+      line-height: 1.65;
+    }
+
+    /* Severity widget */
+    .severity-row {
+      display: flex;
+      gap: 0;
+    }
+
+    .severity-option { display: none; }
+
+    .severity-label {
+      flex: 1;
+      text-align: center;
+      padding: 12px 8px;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      border: 1px solid var(--rule);
+      border-right: none;
+      background: var(--field-bg);
+      color: var(--muted);
+      transition: background 0.15s, color 0.15s;
+      text-transform: uppercase;
+    }
+
+    .severity-label:last-of-type { border-right: 1px solid var(--rule); }
+
+    .severity-option:checked + .severity-label {
+      background: var(--ink);
+      color: var(--paper);
+      border-color: var(--ink);
+    }
+
+    /* Hidden tracking_id field — Playwright populates this */
+    #tracking_id { display: none; }
+
+    .submit-row {
+      display: flex;
+      justify-content: flex-end;
+      padding-top: 24px;
+      border-top: 1px solid var(--rule);
+      gap: 16px;
+    }
+
+    .btn-back {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 14px 32px;
+      border: 2px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-back:hover { background: var(--rule); }
+
+    .btn-submit {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 14px 40px;
+      border: 2px solid var(--ink);
+      background: var(--ink);
+      color: var(--paper);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .btn-submit:hover {
+      background: var(--saffron);
+      border-color: var(--saffron);
+    }
+
+    @media (max-width: 600px) {
+      .field-row { grid-template-columns: 1fr; }
+      header { padding: 16px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="/" class="logo">Nagrɪк<span>Vaani</span></a>
+    <div class="breadcrumb">Home / File Complaint</div>
+  </header>
+
+  <div class="page-wrap">
+    <div class="page-header">
+      <p class="eyebrow">Complaint Registration</p>
+      <h1>File a New Complaint</h1>
+    </div>
+
+    <form method="POST" action="/complaint/submit" id="complaint-form">
+
+      <!-- Hidden fields populated by Playwright / manual entry -->
+      <input type="hidden" name="tracking_id" id="tracking_id" value="">
+      <input type="hidden" name="authority_name" id="authority_name" value="">
+
+      <!-- ── Section 1: Personal Details ── -->
+      <div class="form-section">
+        <div class="section-title">01 — Complainant Details</div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="full_name">Full Name <span class="req">*</span></label>
+            <input type="text" name="full_name" id="full_name" required placeholder="As per Aadhaar / ID" maxlength="120">
+          </div>
+          <div class="field">
+            <label for="email">Email Address <span class="req">*</span></label>
+            <input type="email" name="email" id="email" required placeholder="you@example.com" maxlength="120">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="phone">Phone Number</label>
+            <input type="tel" name="phone" id="phone" placeholder="+91 XXXXX XXXXX" maxlength="15">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section 2: Location ── -->
+      <div class="form-section">
+        <div class="section-title">02 — Incident Location</div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="state">State <span class="req">*</span></label>
+            <select name="state" id="state" required>
+              <option value="" disabled selected>Select State / UT</option>
+
+              <!-- States -->
+              <option>Andhra Pradesh</option>
+              <option>Arunachal Pradesh</option>
+              <option>Assam</option>
+              <option>Bihar</option>
+              <option>Chhattisgarh</option>
+              <option>Goa</option>
+              <option>Gujarat</option>
+              <option>Haryana</option>
+              <option>Himachal Pradesh</option>
+              <option>Jharkhand</option>
+              <option>Karnataka</option>
+              <option>Kerala</option>
+              <option>Madhya Pradesh</option>
+              <option>Maharashtra</option>
+              <option>Manipur</option>
+              <option>Meghalaya</option>
+              <option>Mizoram</option>
+              <option>Nagaland</option>
+              <option>Odisha</option>
+              <option>Punjab</option>
+              <option>Rajasthan</option>
+              <option>Sikkim</option>
+              <option>Tamil Nadu</option>
+              <option>Telangana</option>
+              <option>Tripura</option>
+              <option>Uttar Pradesh</option>
+              <option>Uttarakhand</option>
+              <option>West Bengal</option>
+
+              <!-- Union Territories -->
+              <option>Andaman and Nicobar Islands</option>
+              <option>Chandigarh</option>
+              <option>Dadra and Nagar Haveli and Daman and Diu</option>
+              <option>Delhi</option>
+              <option>Jammu and Kashmir</option>
+              <option>Ladakh</option>
+              <option>Lakshadweep</option>
+              <option>Puducherry</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="district">District <span class="req">*</span></label>
+            <input type="text" name="district" id="district" required placeholder="e.g. Mandi" maxlength="80">
+          </div>
+        </div>
+
+        <div class="field-row full">
+          <div class="field">
+            <label for="location_label">Location Description</label>
+            <input type="text" name="location_label" id="location_label" placeholder="Landmark / village / area" maxlength="200">
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Section 3: Issue ── -->
+      <div class="form-section">
+        <div class="section-title">03 — Issue Details</div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="issue_type">Issue Category <span class="req">*</span></label>
+            <select name="issue_type" id="issue_type" required>
+              <option value="" disabled selected>Select category</option>
+              <option value="Air Pollution">Air Pollution</option>
+              <option value="Water Pollution">Water Pollution</option>
+              <option value="Waste Management">Waste Management</option>
+              <option value="Noise Pollution">Noise Pollution</option>
+              <option value="Deforestation">Deforestation</option>
+              <option value="Infrastructure">Infrastructure</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row full">
+          <div class="field">
+            <label for="description">Complaint Description <span class="req">*</span></label>
+            <textarea 
+              name="description" 
+              id="description" 
+              required 
+              placeholder="Describe the issue (brief or detailed). Include what happened, when, location specifics, and impact."
+              maxlength="2000">
+            </textarea>
+            <div style="font-size:0.75rem;color:#5a6070;margin-top:6px;">
+              Tip: You can enter a short summary — the system will expand and structure it automatically.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Submit ── -->
+      <div class="submit-row">
+        <a href="/" class="btn-back">Cancel</a>
+        <button type="submit" class="btn-submit">Submit Complaint →</button>
+      </div>
+
+    </form>
+  </div>
+
+</body>
+</html>

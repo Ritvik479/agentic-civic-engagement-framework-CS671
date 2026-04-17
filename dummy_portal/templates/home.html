@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>NagrikVaani — Civic Complaint Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Noto+Sans:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0e1117;
+      --paper: #f5f0e8;
+      --saffron: #e8680a;
+      --saffron-dim: #c45508;
+      --rule: #c8bfaa;
+      --muted: #7a7060;
+      --stamp-green: #2d6a4f;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Subtle grid paper texture */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      position: relative;
+      z-index: 1;
+      border-bottom: 2px solid var(--ink);
+      padding: 18px 48px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .logo span { color: var(--saffron); }
+
+    .header-tag {
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--rule);
+      padding: 4px 10px;
+    }
+
+    main {
+      position: relative;
+      z-index: 1;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 80px 24px;
+    }
+
+    .eyebrow {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: clamp(2.8rem, 6vw, 5rem);
+      font-weight: 700;
+      line-height: 1.05;
+      text-align: center;
+      max-width: 700px;
+      margin-bottom: 28px;
+    }
+
+    h1 em {
+      font-style: normal;
+      color: var(--saffron);
+      border-bottom: 3px solid var(--saffron);
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      font-weight: 300;
+      color: var(--muted);
+      text-align: center;
+      max-width: 480px;
+      line-height: 1.7;
+      margin-bottom: 52px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn-primary {
+      display: inline-block;
+      background: var(--ink);
+      color: var(--paper);
+      font-family: 'Rajdhani', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 16px 40px;
+      text-decoration: none;
+      border: 2px solid var(--ink);
+      transition: background 0.18s, color 0.18s;
+    }
+
+    .btn-primary:hover {
+      background: var(--saffron);
+      border-color: var(--saffron);
+    }
+
+    .btn-secondary {
+      display: inline-block;
+      background: transparent;
+      color: var(--ink);
+      font-family: 'Rajdhani', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 16px 40px;
+      text-decoration: none;
+      border: 2px solid var(--ink);
+      transition: background 0.18s, color 0.18s;
+    }
+
+    .btn-secondary:hover {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .divider {
+      width: 60px;
+      height: 3px;
+      background: var(--saffron);
+      margin: 72px auto 56px;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0;
+      max-width: 800px;
+      width: 100%;
+      border: 1px solid var(--rule);
+    }
+
+    .info-cell {
+      padding: 32px 28px;
+      border-right: 1px solid var(--rule);
+    }
+
+    .info-cell:last-child { border-right: none; }
+
+    .info-num {
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--saffron);
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .info-label {
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .stamp {
+      position: fixed;
+      bottom: 32px;
+      right: 40px;
+      z-index: 2;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--stamp-green);
+      border: 2px solid var(--stamp-green);
+      padding: 6px 12px;
+      transform: rotate(-4deg);
+      opacity: 0.7;
+    }
+
+    footer {
+      position: relative;
+      z-index: 1;
+      border-top: 1px solid var(--rule);
+      padding: 16px 48px;
+      font-size: 0.72rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @media (max-width: 600px) {
+      header { padding: 16px 20px; }
+      .info-grid { grid-template-columns: 1fr; }
+      .info-cell { border-right: none; border-bottom: 1px solid var(--rule); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">Nagrɪк<span>Vaani</span></div>
+    <div class="header-tag">Test Environment · Not a Real Portal</div>
+  </header>
+
+  <main>
+    <p class="eyebrow">Civic Complaint Management System</p>
+    <h1>Your Voice.<br><em>Their Duty.</em></h1>
+    <p class="subtitle">
+      File civic and environmental complaints directly with the concerned authorities.
+      Track your complaint status and receive updates throughout the process.
+    </p>
+
+    <div class="actions">
+      <a href="/complaint/new" class="btn-primary">File a Complaint</a>
+      <a href="/complaint/status" class="btn-secondary">Track Complaint</a>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="info-grid">
+      <div class="info-cell">
+        <div class="info-num">5</div>
+        <div class="info-label">Issue Categories</div>
+      </div>
+      <div class="info-cell">
+        <div class="info-num">4</div>
+        <div class="info-label">Escalation Levels</div>
+      </div>
+      <div class="info-cell">
+        <div class="info-num">72h</div>
+        <div class="info-label">Default SLA Window</div>
+      </div>
+    </div>
+  </main>
+
+  <div class="stamp">Dummy Portal · Testing Only</div>
+
+  <footer>
+    <span>NagrikVaani Complaint Portal</span>
+    <span>Automated Civic Complaint System · Test Build</span>
+  </footer>
+
+</body>
+</html>
