@@ -1,9 +1,6 @@
-## Please fix: Convert to sync
-
 from dotenv import load_dotenv
 import os
 from groq import Groq
-import asyncio
 
 load_dotenv()
 
@@ -15,7 +12,7 @@ if not api_key:
 client = Groq(api_key=api_key)
 
 
-async def calculate_severity(issue: str, description: str, location: str) -> dict:
+def calculate_severity(issue: str, description: str, location: str) -> dict:
     """
     Calculates severity of a civic complaint issue.
 
@@ -52,8 +49,7 @@ Nothing else.
 """
 
     try:
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
+        response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {
