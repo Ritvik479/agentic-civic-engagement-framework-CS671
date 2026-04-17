@@ -1,3 +1,5 @@
+## Please fix: Convert to sync
+
 from dotenv import load_dotenv
 import os
 from groq import Groq
