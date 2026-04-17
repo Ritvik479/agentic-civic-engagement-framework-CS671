@@ -62,6 +62,8 @@ async def init_db():
                 authority_email TEXT,
                 authority_portal TEXT,
                 complaint_text TEXT,
+                authority_level     TEXT DEFAULT 'level1',
+                authority_level_num INTEGER DEFAULT 1,
 
                 submission_status TEXT DEFAULT 'pending',
                 submission_screenshot TEXT,
@@ -212,6 +214,8 @@ async def save_complaint(ctx: ComplaintContext):
                 authority_email,
                 authority_portal,
                 complaint_text,
+                authority_level,
+                authority_level_num,
 
                 submission_status,
                 submission_screenshot,
@@ -255,6 +259,8 @@ async def save_complaint(ctx: ComplaintContext):
                 authority_email         = excluded.authority_email,
                 authority_portal        = excluded.authority_portal,
                 complaint_text          = excluded.complaint_text,
+                authority_level         = excluded.authority_level,
+                authority_level_num     = excluded.authority_level_num,
 
                 submission_status       = excluded.submission_status,
                 submission_screenshot   = excluded.submission_screenshot,

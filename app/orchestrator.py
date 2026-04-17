@@ -19,7 +19,7 @@ from app.db.database import (
 # ---------------------------------------------------------------------------
 
 # Pair D tools
-from app.tools.pair_d.vision import detect_issue_and_location
+from app.tools.pair_d.vision_pipeline_tool import detect_issue_and_location # Needs to be fixed
 
 # Trio C tools
 from app.tools.trio_c.authority_lookup_tool import lookup_authority

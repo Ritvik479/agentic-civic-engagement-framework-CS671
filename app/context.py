@@ -30,6 +30,8 @@ class ComplaintContext:
     authority_email: str = ""
     authority_portal: str = ""
     complaint_text: str = ""
+    authority_level: str = "level1"
+    authority_level_num: int = 1
 
     # Pair B outputs
     submission_status: str = "pending"
