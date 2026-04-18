@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import uuid
 import json
 import base64
@@ -168,7 +169,7 @@ def extract_best_frame(video_path: str) -> str:
     if best_frame is None:
         raise ValueError("Could not extract any frame from video")
 
-    out_path = f"/tmp/{uuid.uuid4()}.jpg"   # UUID — safe for concurrent users
+    out_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.jpg")   # UUID — safe for concurrent users
     cv2.imwrite(out_path, best_frame)
     print(f"  [frame scorer] best frame → {out_path}  (score={best_score:.1f})")
     return out_path
@@ -191,7 +192,7 @@ def _check_embedded_subtitles(video_path: str) -> bool:
 
 
 def _extract_embedded_subtitles(video_path: str) -> str:
-    srt_path = f"/tmp/{uuid.uuid4()}.srt"   # UUID — safe for concurrent users
+    srt_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.srt")
     subprocess.run(
         ["ffmpeg", "-i", video_path, "-map", "0:s:0", srt_path, "-y", "-loglevel", "error"],
         capture_output=True
@@ -211,7 +212,7 @@ def _extract_embedded_subtitles(video_path: str) -> str:
 
 def _extract_audio(video_path: str) -> str | None:
     """Extracts mono 16 kHz WAV for Whisper. Returns path or None if no audio."""
-    audio_path = f"/tmp/{uuid.uuid4()}.wav"   # UUID — safe for concurrent users
+    audio_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.wav")  
     subprocess.run([
         "ffmpeg", "-i", video_path,
         "-ar", "16000", "-ac", "1", "-vn",

@@ -12,6 +12,7 @@ The output key is `issue_type` (not `label`) to match orchestrator.py directly.
 """
 
 import os
+import tempfile
 import uuid
 import json
 import base64
@@ -258,7 +259,7 @@ def detect_issue(context: dict) -> dict:
         vision_result = _yolo_detect(frame_path)
     elif frame_b64:
         # frame_path unavailable — decode to tmp file for YOLO
-        tmp_path = f"/tmp/{uuid.uuid4()}.jpg"
+        tmp_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}.jpg")
         with open(tmp_path, 'wb') as fh:
             fh.write(base64.b64decode(frame_b64))
         print("\n[A] Running YOLO (from b64)...")

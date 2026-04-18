@@ -124,7 +124,7 @@ def _compose(ctx: dict) -> str:
         f"*Ref ID:* {ref}\n"
         f"*Issue:* {issue}\n"
         f"*Location:* {location}\n"
-        f"*Severity:* {severity}/4\n"
+        f"*Severity:* {severity}/5\n"
         f"*Filed On:* {date_str}\n\n"
         f"A detailed complaint with supporting evidence has been sent to your "
         f"registered email. Please acknowledge within 48 hours.\n\n"
@@ -158,7 +158,11 @@ def _resolve_phone(ctx: dict) -> str:
 
     # Ensure leading + for international format
     if not digits.startswith("+"):
-        digits = "+91" + digits  # assume India if no country code
+        print(
+            f"[WhatsAppDispatch] WARNING: No country code in '{raw}' — "
+            "assuming +91 (India). Set authority_phone with full E.164 format to suppress this."
+        )
+        digits = "+91" + digits
 
     # Basic sanity: E.164 is 8–15 digits after +
     digit_count = len(digits.replace("+", ""))
@@ -187,6 +191,7 @@ def _send_twilio(to_phone: str, message: str) -> dict:
             "sent":    False,
             "mocked":  False,
             "channel": "twilio",
+            "message_id": "",
             "error":   "twilio package not installed. Run: pip install twilio"
         }
 
@@ -200,11 +205,12 @@ def _send_twilio(to_phone: str, message: str) -> dict:
 
         print(f"[WhatsAppDispatch] Sent via Twilio | SID: {msg.sid}")
         return {
-            "success": True,
-            "sent":    True,
-            "mocked":  False,
-            "channel": "twilio",
-            "error":   ""
+            "success":    True,
+            "sent":       True,
+            "mocked":     False,
+            "channel":    "twilio",
+            "message_id": msg.sid,
+            "error":      ""
         }
 
     except Exception as e:
@@ -214,6 +220,7 @@ def _send_twilio(to_phone: str, message: str) -> dict:
             "sent":    False,
             "mocked":  False,
             "channel": "twilio",
+            "message_id": "",
             "error":   f"Twilio send failed: {e}"
         }
 
@@ -335,5 +342,6 @@ def _skipped() -> dict:
         "sent":    False,
         "mocked":  False,
         "channel": "skipped",
+        "message_id": "",
         "error":   ""
     }

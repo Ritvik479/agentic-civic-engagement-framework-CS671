@@ -1,230 +1,267 @@
 # app/orchestrator.py
-# ---------------------------------------------------------------------------
-# OWNED BY: Pair B
-# ---------------------------------------------------------------------------
 
-import traceback
+import asyncio
 from dataclasses import asdict
 
 from app.context import ComplaintContext
-
 from app.db.database import (
     save_complaint,
+    update_status,
     insert_log,
-    update_status
+    fetch_complaint,
 )
-
-# ---------------------------------------------------------------------------
-# Correct tool imports
-# ---------------------------------------------------------------------------
-
-# Pair D tools
-from app.tools.pair_d.vision_pipeline_tool import detect_issue_and_location # Needs to be fixed
-
-# Trio C tools
+from app.tools.pair_d.vision_pipeline_tool  import run_vision_pipeline
 from app.tools.trio_c.authority_lookup_tool import lookup_authority
-from app.tools.trio_c.severity_score_tool import calculate_severity
-from app.tools.trio_c.complaint_draft_tool import draft_complaint
-
-# Pair B tools
+from app.tools.trio_c.severity_score_tool   import calculate_severity
+from app.tools.trio_c.complaint_draft_tool  import draft_complaint
 from app.tools.pair_b.submission_agent_tool import submit_complaint
 
+# How often to poll DB for location confirmation (seconds)
+LOCATION_POLL_INTERVAL = 5
+# Maximum time to wait for user to confirm location before giving up (seconds)
+LOCATION_POLL_TIMEOUT  = 600   # 10 minutes
 
-# ---------------------------------------------------------------------------
-# Main pipeline runner
-# Called asynchronously by FastAPI BackgroundTasks
-# ---------------------------------------------------------------------------
+
 async def run_agent(
-    video_path: str,
-    tracking_id: str,
-    user_state: str = "",
-    user_district: str = "",
-    user_id: str = "anonymous"
+    video_path:             str,
+    video_url:              str,
+    tracking_id:            str,
+    name:                   str,
+    email:                  str,
+    phone:                  str,
+    user_state:             str,
+    user_district:          str,
+    landmark:               str,
+    user_issue_description: str,
+    user_id:                str,
 ):
     """
-    Runs full complaint pipeline as an async background task.
+    Full async pipeline: vision → location confirmation (if needed)
+    → authority lookup → severity → complaint draft → submission.
+
+    Called by FastAPI BackgroundTasks — must never raise.
+    All failures are caught, logged, and written to DB as status="failed".
     """
 
-    # -----------------------------------------------------------------------
-    # Create complaint context object
-    # -----------------------------------------------------------------------
+    # ── 1. Build initial context ────────────────────────────────────────────
+    user_location = ", ".join(p for p in [landmark, user_district, user_state] if p)
+
     ctx = ComplaintContext(
-        tracking_id=tracking_id,
-        user_id=user_id,
-        video_path=video_path
+        tracking_id             = tracking_id,
+        user_id                 = user_id,
+        video_path              = video_path,
+        video_url               = video_url,
+        name                    = name,
+        email                   = email,
+        phone                   = phone,
+        user_issue_description  = user_issue_description,
+        landmark                = landmark,
+        state                   = user_state,
+        district                = user_district,
+        location_label          = user_location,
     )
-
-    ctx.state = user_state
-    ctx.district = user_district
-
-    print(f"\n{'='*60}")
-    print("[Orchestrator] Pipeline started")
-    print(f"[Tracking ID] {tracking_id}")
-    print(f"[Video]       {video_path}")
-    print(f"[Location]    {user_district}, {user_state}")
-    print(f"{'='*60}")
 
     try:
 
-        # ================================================================
-        # STEP 1 — Pair D: Vision + Speech
-        # ================================================================
+        # ── 2. Vision pipeline (Pair D) ─────────────────────────────────────
+        await _log(tracking_id, "Starting vision analysis...")
         await update_status(tracking_id, "detecting_issue")
-        await insert_log(tracking_id, "Issue detection started.")
 
-        print("\n[Step 1] Running vision + speech agent...")
-
-        pair_d_result = detect_issue_and_location(
-            video_path=video_path,
-            user_state=user_state,
-            user_district=user_district
+        vision_result = await asyncio.to_thread(
+            run_vision_pipeline,
+            video_path    = video_path or None,
+            url           = video_url  or None,
+            user_location = user_location,
+            whatsapp_text = "",
         )
 
-        ctx.issue_type = pair_d_result["issue_type"]
-        ctx.transcript = pair_d_result["transcript"]
-
-        if pair_d_result.get("state"):
-            ctx.state = pair_d_result["state"]
-        if pair_d_result.get("district"):
-            ctx.district = pair_d_result["district"]
-
-        ctx.location_label = pair_d_result.get("location_label", "")
-
-        # ================================================================
-        # STEP 1.5 — Trio C: Severity Scoring
-        # ================================================================
-        await insert_log(tracking_id, "Severity scoring started.")
-
-        print("\n[Step 1.5] Calculating severity...")
-
-        severity_result = await calculate_severity(
-            issue=ctx.issue_type,
-            description=ctx.transcript,
-            location=ctx.location_label or f"{ctx.district}, {ctx.state}"
-        )
-
-        ctx.severity = severity_result["severity"]
+        ctx.issue_type     = vision_result.get("issue_type", "Unknown")
+        ctx.transcript     = vision_result.get("transcript", "")
+        ctx.state          = vision_result.get("state")     or user_state
+        ctx.district       = vision_result.get("district")  or user_district
+        ctx.location_label = vision_result.get("location_label") or user_location
 
         await save_complaint(ctx)
+        await _log(tracking_id, f"Issue detected: {ctx.issue_type} at {ctx.location_label}.")
 
-        await insert_log(
-            tracking_id,
-            f"Issue detected: {ctx.issue_type} at "
-            f"{ctx.location_label or f'{ctx.district}, {ctx.state}'} | "
-            f"Severity {ctx.severity}/5"
-        )
+        # ── 3. Location confirmation gate ───────────────────────────────────
+        if vision_result.get("needs_user_input"):
+            await update_status(tracking_id, "needs_location")
+            await _log(tracking_id, "Location unclear — please confirm your location.")
 
-        print(
-            f"[Step 1 Complete] {ctx.issue_type} | "
-            f"{ctx.location_label} | severity {ctx.severity}/5"
-        )
+            confirmed = await _wait_for_location(tracking_id)
 
-        # ================================================================
-        # STEP 2 — Trio C: Authority Mapping
-        # ================================================================
+            if not confirmed:
+                # Timed out — fall back to user-supplied state/district
+                await _log(
+                    tracking_id,
+                    "Location confirmation timed out — using submitted location as fallback."
+                )
+                # ctx.state and ctx.district already set from user_state/user_district above
+            else:
+                # Re-fetch confirmed location from DB (written by /confirm-location)
+                refreshed = await fetch_complaint(tracking_id)
+                if refreshed:
+                    ctx.state          = refreshed.get("state")          or ctx.state
+                    ctx.district       = refreshed.get("district")        or ctx.district
+                    ctx.landmark       = refreshed.get("landmark")        or ctx.landmark
+                    ctx.location_label = refreshed.get("location_label")  or ctx.location_label
+
+                await _log(tracking_id, f"Location confirmed: {ctx.location_label}.")
+
+        # ── 4. Authority lookup ─────────────────────────────────────────────
         await update_status(tracking_id, "mapping_authority")
-        await insert_log(tracking_id, "Authority mapping started.")
-
-        print("\n[Step 2] Looking up authority...")
+        await _log(tracking_id, "Mapping to relevant authority...")
 
         authority = lookup_authority(
-            ctx.issue_type,
-            ctx.state,
-            ctx.district,
-            ctx.severity
+            issue    = ctx.issue_type,
+            state    = ctx.state,
+            district = ctx.district,
+            severity = ctx.severity or 2,   # severity not yet scored — use default
         )
 
-        ctx.authority_name      = authority["authority_name"]
-        ctx.authority_email     = authority["authority_email"]
-        ctx.authority_portal    = authority["authority_portal"]
-        ctx.authority_phone     = authority["authority_phone"]      # ADD
-        ctx.authority_level     = authority["current_level"]        # ADD
-        ctx.authority_level_num = authority["current_level_num"]    # ADD
+        ctx.authority_name      = authority.get("authority_name", "")
+        ctx.authority_email     = authority.get("authority_email", "")
+        ctx.authority_portal    = authority.get("authority_portal", "")
+        ctx.authority_phone     = authority.get("authority_phone", "")
+        ctx.authority_level     = authority.get("current_level", "level1")
+        ctx.authority_level_num = authority.get("current_level_num", 1)
 
         await save_complaint(ctx)
-        await insert_log(
-            tracking_id,
-            f"Authority mapped: {ctx.authority_name}"
+        await _log(tracking_id, f"Authority mapped: {ctx.authority_name}.")
+
+        # ── 5. Severity scoring ─────────────────────────────────────────────
+        await _log(tracking_id, "Scoring complaint severity...")
+
+        description = _build_description(ctx)
+        severity_result = await asyncio.to_thread(
+            calculate_severity,
+            issue       = ctx.issue_type,
+            description = description,
+            location    = ctx.location_label,
         )
 
-        print(f"[Step 2 Complete] {ctx.authority_name}")
+        ctx.severity = severity_result.get("severity", 2)
+        if not severity_result.get("success"):
+            await _log(tracking_id, "Severity scoring failed — defaulting to 2.")
+        else:
+            await _log(tracking_id, f"Severity scored: {ctx.severity}/5.")
 
-        # ================================================================
-        # STEP 3 — Trio C: Complaint Drafting
-        # ================================================================
+        # Re-run authority lookup now that we have real severity
+        # (severity affects which level authority is assigned)
+        authority = lookup_authority(
+            issue    = ctx.issue_type,
+            state    = ctx.state,
+            district = ctx.district,
+            severity = ctx.severity,
+        )
+        ctx.authority_name      = authority.get("authority_name", "")
+        ctx.authority_email     = authority.get("authority_email", "")
+        ctx.authority_portal    = authority.get("authority_portal", "")
+        ctx.authority_phone     = authority.get("authority_phone", "")
+        ctx.authority_level     = authority.get("current_level", "level1")
+        ctx.authority_level_num = authority.get("current_level_num", 1)
+
+        await save_complaint(ctx)
+        await _log(tracking_id, f"Authority confirmed post-severity: {ctx.authority_name}.")
+
+        # ── 6. Complaint drafting ───────────────────────────────────────────
         await update_status(tracking_id, "drafting_complaint")
-        await insert_log(tracking_id, "Complaint drafting started.")
+        await _log(tracking_id, "Drafting formal complaint...")
 
-        print("\n[Step 3] Drafting complaint...")
+        complaint_text = await asyncio.to_thread(
+            draft_complaint,
+            issue       = ctx.issue_type,
+            description = description,
+            location    = ctx.location_label,
+        )
 
-        ctx.complaint_text = draft_complaint(asdict(ctx))
+        if complaint_text.startswith("Failed") or complaint_text.startswith("Unable"):
+            await _log(tracking_id, f"Complaint draft issue: {complaint_text}")
+            # Non-fatal — proceed with whatever text was returned
+            # The sentinel strings are still valid fallback complaint text
 
+        ctx.complaint_text = complaint_text
         await save_complaint(ctx)
-        await insert_log(
-            tracking_id,
-            "Complaint draft generated successfully."
-        )
+        await _log(tracking_id, "Complaint drafted.")
 
-        print(
-            f"[Step 3 Complete] Draft length: "
-            f"{len(ctx.complaint_text)} chars"
-        )
-
-        # ================================================================
-        # STEP 4 — Pair B: Portal Submission
-        # ================================================================
+        # ── 7. Multi-channel submission (Pair B) ────────────────────────────
         await update_status(tracking_id, "submitting")
-        await insert_log(tracking_id, "Portal submission started.")
+        await _log(tracking_id, "Submitting complaint via portal, email, and WhatsApp...")
 
-        print("\n[Step 4] Submitting complaint...")
+        submission = await asyncio.to_thread(submit_complaint, asdict(ctx))
 
-        submission = submit_complaint(asdict(ctx))
-
-        ctx.submission_status = submission["submission_status"]
-        ctx.submission_screenshot = submission["submission_screenshot"]
-        ctx.complaint_ref_id = submission["complaint_ref_id"]   # ADD
+        ctx.submission_status     = submission.get("submission_status", "failed")
+        ctx.submission_screenshot = submission.get("submission_screenshot", "")
+        ctx.complaint_ref_id      = submission.get("complaint_ref_id", "")
 
         await save_complaint(ctx)
-        await insert_log(
-            tracking_id,
-            f"Submission result: {ctx.submission_status}"
-        )
+        await update_status(tracking_id, ctx.submission_status)
 
-        print(
-            f"[Step 4 Complete] Submission status: "
-            f"{ctx.submission_status}"
-        )
-
-        # ================================================================
-        # STEP 5 — Final Status
-        # ================================================================
-        if ctx.submission_status == "submitted":
-            await update_status(tracking_id, "submitted")
-            await insert_log(
+        if submission.get("success"):
+            await _log(
                 tracking_id,
-                "Complaint submitted successfully."
+                f"Complaint submitted successfully. "
+                f"Ref: {ctx.complaint_ref_id}. "
+                f"Status: {ctx.submission_status}."
             )
         else:
-            await update_status(tracking_id, "failed")
-            await insert_log(
+            await _log(
                 tracking_id,
-                "Complaint submission failed."
+                f"Submission completed with status: {ctx.submission_status}. "
+                f"Error: {submission.get('error', '')}."
             )
 
     except Exception as e:
-        # ================================================================
-        # Failure Handling
-        # ================================================================
+        # Catch-all — pipeline must never crash silently
+        import traceback
+        traceback.print_exc()
         ctx.error = str(e)
         ctx.submission_status = "failed"
+        try:
+            await save_complaint(ctx)
+            await update_status(tracking_id, "failed")
+            await _log(tracking_id, f"Pipeline failed: {e}")
+        except Exception as inner:
+            print(f"[Orchestrator] CRITICAL: could not write failure to DB: {inner}")
 
-        await save_complaint(ctx)
-        await update_status(tracking_id, "failed")
-        await insert_log(tracking_id, f"Pipeline failed: {str(e)}")
 
-        print(f"\n[Orchestrator ERROR] {e}")
-        traceback.print_exc()
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    print(f"\n{'='*60}")
-    print(f"[Pipeline Complete] Final status: {ctx.submission_status}")
-    print(f"{'='*60}\n")
+async def _wait_for_location(tracking_id: str) -> bool:
+    """
+    Polls DB until /confirm-location flips status to 'authority_mapped',
+    or until LOCATION_POLL_TIMEOUT seconds elapse.
+    Returns True if confirmed, False if timed out.
+    """
+    elapsed = 0
+    while elapsed < LOCATION_POLL_TIMEOUT:
+        await asyncio.sleep(LOCATION_POLL_INTERVAL)
+        elapsed += LOCATION_POLL_INTERVAL
+        row = await fetch_complaint(tracking_id)
+        if row and row.get("submission_status") == "authority_mapped":
+            return True
+    return False
+
+
+async def _log(tracking_id: str, message: str):
+    """Thin wrapper — keeps pipeline body readable."""
+    print(f"[Orchestrator:{tracking_id}] {message}")
+    await insert_log(tracking_id, message)
+
+
+def _build_description(ctx: ComplaintContext) -> str:
+    """
+    Assembles the best available description for severity scoring and
+    complaint drafting from transcript and user-supplied text.
+    Transcript is preferred — it's richer. User description appended
+    as supplementary context if present.
+    """
+    parts = []
+    if ctx.transcript:
+        parts.append(ctx.transcript)
+    if ctx.user_issue_description:
+        parts.append(f"Additional context: {ctx.user_issue_description}")
+    return " ".join(parts) or ctx.issue_type

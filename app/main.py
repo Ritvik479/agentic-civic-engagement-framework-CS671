@@ -1,16 +1,11 @@
-# app/main.py
-# ---------------------------------------------------------------------------
-# FastAPI entry point
-#
-# Start server:
-#   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-#
-# This file:
-# - creates FastAPI app
-# - enables CORS for frontend mobile app
-# - initializes SQLite DB at startup
-# - registers all API routes
-# ---------------------------------------------------------------------------
+# This MUST be at the very top, before any other imports
+from dotenv import load_dotenv
+from pathlib import Path
+
+# Load .env from project root (assuming project-root/app/main.py)
+project_root = Path(__file__).parent.parent
+env_path = project_root / '.env'
+load_dotenv(dotenv_path=env_path)
 
 from contextlib import asynccontextmanager
 
@@ -21,75 +16,42 @@ from app.db.database import init_db
 from app.routes.api import router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from app.tools.pair_b.escalation_engine_tool import run_escalation_check
+from app.tools.pair_b.escalation_engine_tool import _run_escalation_check_async
 
-# ---------------------------------------------------------------------------
-# Lifespan startup hook (modern FastAPI replacement for @on_event)
-# Runs once when server starts
-# ---------------------------------------------------------------------------
+scheduler = AsyncIOScheduler()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[Server] Starting up...")
 
-    # Initialize SQLite database
     await init_db()
-
     print("[Server] Database initialized.")
+
+    scheduler.add_job(_run_escalation_check_async, "interval", minutes=30)
+    scheduler.start()
+    print("[Server] Escalation scheduler started.")
+
     print("[Server] All endpoints live at /api/...")
 
     yield
 
+    scheduler.shutdown()
     print("[Server] Shutdown complete.")
 
 
-# ---------------------------------------------------------------------------
-# Create FastAPI application
-# ---------------------------------------------------------------------------
 app = FastAPI(
     title="Agentic Civic Engagement Backend",
     description="Converts activist videos into government complaints.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
-
-# ---------------------------------------------------------------------------
-# Enable CORS for mobile frontend access
-#
-# NOTE:
-# For development:
-# allow_origins=["*"] is okay.
-#
-# For production:
-# replace "*" with actual frontend domain/IP.
-# ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,   # or replace "*" with your frontend's actual origin
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# ---------------------------------------------------------------------------
-# Register all API routes
-# All endpoints become:
-# /api/process
-# /api/status/{id}
-# /api/confirm-location
-# etc.
-# ---------------------------------------------------------------------------
 app.include_router(router, prefix="/api")
-
-scheduler = AsyncIOScheduler()
-scheduler.add_job(run_escalation_check, "interval", minutes=30)
-
-@app.on_event("startup")
-async def startup():
-    await init_db()
-    scheduler.start()
-
-@app.on_event("shutdown")
-async def shutdown():
-    scheduler.shutdown()

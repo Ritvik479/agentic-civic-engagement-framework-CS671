@@ -76,12 +76,14 @@ DUMMY_PORTAL_URL = os.getenv("DUMMY_PORTAL_URL", "http://localhost:5050")
 
 # Severity → SLA in hours before escalation is triggered
 SLA_HOURS: dict[int, int] = {
+    0: 72,   # informational — treat same as low severity
     1: 72,
     2: 48,
     3: 24,
     4: 12,
+    5: 6,    # critical — escalate fast
 }
-DEFAULT_SLA_HOURS = 48  # fallback if severity missing or unexpected
+DEFAULT_SLA_HOURS = 48  # kept as safety net, should never fire now
 
 # Statuses that are eligible for escalation checks
 ESCALATABLE_STATUSES = {
@@ -98,12 +100,13 @@ CEILING_STATUS = "escalated_l4"
 IGNORED_STATUSES = {
     "pending", "detecting_issue", "mapping_authority",
     "drafting_complaint", "submitting", "failed", "resolved",
+    "authority_mapped",   # ADD — waiting for orchestrator to resume after location confirmation
 }
 
 # Map current status → current level number (for authority lookup)
 STATUS_TO_LEVEL: dict[str, int] = {
     "submitted":    1,
-    "email_only":   1,
+    "email_only":   2,   # portal already failed at l1 — skip straight to l2
     "escalated_l2": 2,
     "escalated_l3": 3,
     "escalated_l4": 4,
@@ -124,9 +127,15 @@ def _load_authority_data() -> list[dict]:
     try:
         with open(AUTHORITY_DATA_PATH, encoding="utf-8") as f:
             return json.load(f)["data"]
-    except Exception as e:
-        print(f"[EscalationEngine] WARNING: Could not load authority_data.json: {e}")
-        return []
+    except FileNotFoundError:
+        raise RuntimeError(
+            f"[EscalationEngine] FATAL: authority_data.json not found at "
+            f"{AUTHORITY_DATA_PATH}. Cannot start escalation engine."
+        )
+    except (KeyError, json.JSONDecodeError) as e:
+        raise RuntimeError(
+            f"[EscalationEngine] FATAL: authority_data.json is malformed: {e}"
+        )
 
 _AUTHORITY_DATA: list[dict] = _load_authority_data()
 
@@ -146,44 +155,18 @@ _AUTHORITY_INDEX: dict[tuple, dict] = {
 # ---------------------------------------------------------------------------
 
 def run_escalation_check() -> dict:
-    """
-    Main scheduler entry point. Checks all escalatable complaints and
-    escalates any that have breached their SLA.
+    """Sync entry point for APScheduler."""
+    return asyncio.run(_run_escalation_check_async())
 
-    Returns a summary dict for logging:
-        {
-            "checked":   int,   # complaints evaluated
-            "escalated": int,   # complaints escalated this run
-            "skipped":   int,   # within SLA, no action needed
-            "errors":    list   # list of error strings
-        }
-    """
-    print(f"\n{'='*55}")
-    print(f"[EscalationEngine] Check started — {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"{'='*55}")
-
+async def _run_escalation_check_async() -> dict:
     summary = {"checked": 0, "escalated": 0, "skipped": 0, "errors": []}
-
-    # Fetch all complaints that could need escalation
-    try:
-        all_complaints = asyncio.run(fetch_slim_complaints())
-    except Exception as e:
-        msg = f"DB fetch failed: {e}"
-        print(f"[EscalationEngine] ERROR: {msg}")
-        summary["errors"].append(msg)
-        return summary
-
-    escalatable = [
-        c for c in all_complaints
-        if c.get("submission_status") in ESCALATABLE_STATUSES
-    ]
-
-    print(f"[EscalationEngine] {len(escalatable)} complaint(s) eligible for check.")
+    all_complaints = await fetch_slim_complaints()
+    escalatable = [c for c in all_complaints if c.get("submission_status") in ESCALATABLE_STATUSES]
 
     for slim in escalatable:
         tracking_id = slim["tracking_id"]
         try:
-            _process_complaint(tracking_id, slim, summary)
+            await _process_complaint(tracking_id, slim, summary)
         except Exception as e:
             msg = f"{tracking_id}: unhandled error — {e}"
             print(f"[EscalationEngine] ERROR: {msg}")
@@ -204,7 +187,7 @@ def run_escalation_check() -> dict:
 # Per-complaint processing
 # ---------------------------------------------------------------------------
 
-def _process_complaint(tracking_id: str, slim: dict, summary: dict):
+async def _process_complaint(tracking_id: str, slim: dict, summary: dict):
     """Evaluates one complaint and escalates if SLA is breached."""
 
     summary["checked"] += 1
@@ -220,7 +203,7 @@ def _process_complaint(tracking_id: str, slim: dict, summary: dict):
     # ── Get effective complaint age ──────────────────────────────────────────
     # First try the dummy portal API (respects per-complaint clock offset).
     # Fall back to computing age from DB submitted_at if portal unreachable.
-    complaint_full = asyncio.run(fetch_complaint(tracking_id))
+    complaint_full = await fetch_complaint(tracking_id)
     if not complaint_full:
         print(f"[EscalationEngine] {tracking_id}: not found in DB — skipping.")
         summary["errors"].append(f"{tracking_id}: not found in DB")
@@ -246,7 +229,7 @@ def _process_complaint(tracking_id: str, slim: dict, summary: dict):
     _escalate(complaint_full, status, summary)
 
 
-def _escalate(complaint: dict, current_status: str, summary: dict):
+async def _escalate(complaint: dict, current_status: str, summary: dict):
     """
     Looks up the next authority level, updates DB, re-submits complaint.
     """
@@ -281,12 +264,12 @@ def _escalate(complaint: dict, current_status: str, summary: dict):
         f"SLA breached (level {current_level_num}). "
         f"Escalating to {next_authority['authority']} (level {next_level_num})."
     )
-    asyncio.run(insert_log(tracking_id, log_msg))
+    await insert_log(tracking_id, log_msg)
     print(f"[EscalationEngine] {tracking_id}: {log_msg}")
 
     # ── Update DB with new authority before re-submission ────────────────────
-    asyncio.run(update_status(tracking_id, "submitting"))
-    asyncio.run(save_complaint(ctx))
+    await save_complaint(ctx)           # persist new authority first
+    await update_status(tracking_id, "submitting")  # then flip status
 
     # ── Re-submit via submission_agent ───────────────────────────────────────
     result = submit_complaint(asdict(ctx))
@@ -390,15 +373,18 @@ def _fetch_portal_age(complaint_ref_id: str) -> float | None:
 
 
 def _age_from_db(complaint: dict) -> float:
-    """Computes complaint age in hours from DB submitted_at / created_at."""
     ts_str = complaint.get("created_at") or complaint.get("updated_at", "")
     if not ts_str:
         return 0.0
     try:
-        submitted_at = datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+        submitted_at = datetime.datetime.fromisoformat(ts_str)
+        # Strip tzinfo if present to allow naive subtraction
+        if submitted_at.tzinfo is not None:
+            submitted_at = submitted_at.replace(tzinfo=None)
         delta = datetime.datetime.now() - submitted_at
         return delta.total_seconds() / 3600
-    except ValueError:
+    except (ValueError, TypeError):
+        print(f"[EscalationEngine] WARNING: Could not parse timestamp '{ts_str}' — defaulting age to 0.0h")
         return 0.0
 
 
@@ -445,7 +431,7 @@ def _build_context(
         # Carry over existing submission artefacts
         submission_status     = "submitting",
         submission_screenshot = complaint.get("submission_screenshot", ""),
-        complaint_ref_id      = complaint.get("complaint_ref_id", ""),
+        complaint_ref_id = "",
     )
 
     return ctx

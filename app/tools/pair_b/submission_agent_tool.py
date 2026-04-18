@@ -102,7 +102,7 @@ def submit_complaint(ctx: dict) -> dict:
     # ── Aggregate status ─────────────────────────────────────────────────────
     submission_status = _compute_status(portal_result, email_result)
 
-    screenshot    = portal_result.get("submission_screenshot") or portal_result.get("screenshot", "")
+    screenshot = portal_result.get("submission_screenshot", "")
     complaint_ref = portal_result.get("complaint_ref_id", "")
     overall_ok    = submission_status != "failed"
 
@@ -161,7 +161,7 @@ def _compute_status(portal_result: dict, email_result: dict) -> str:
     WhatsApp is deliberately excluded from this logic — it is always
     best-effort and its failure should never degrade the status.
     """
-    if portal_result["success"]:
+    if portal_result["success"] and portal_result.get("complaint_ref_id"):
         return "submitted"
 
     if email_result["success"]:

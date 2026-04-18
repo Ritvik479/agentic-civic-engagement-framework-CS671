@@ -15,7 +15,6 @@ from fastapi import (
     BackgroundTasks
 )
 from fastapi.responses import JSONResponse
-from ffmpeg import video
 
 from app.orchestrator import run_agent
 from app.db.database import (
@@ -80,9 +79,9 @@ async def process_video(
             status_code=400,
             detail="Provide either a file upload or a video URL, not both."
         )
-    ext = os.path.splitext(video.filename or "video.mp4")[1].lower() or ".mp4"
-
+    
     if video:
+        ext = os.path.splitext(video.filename or "video.mp4")[1].lower() or ".mp4"
         allowed_mime_prefixes = ("video/", "image/")
         if not any(video.content_type.startswith(p) for p in allowed_mime_prefixes) or ext not in ALLOWED_EXTENSIONS:
             raise HTTPException(
@@ -103,21 +102,24 @@ async def process_video(
     filename = f"{uuid.uuid4().hex}{ext}"
     filepath = os.path.join(UPLOAD_DIR, filename)
 
-    total_bytes = 0
-    with open(filepath, "wb") as f:
-        while chunk := await video.read(1024 * 1024):      # 1 MB chunks
-            total_bytes += len(chunk)
-            if total_bytes > MAX_VIDEO_BYTES:
-                f.close()
-                os.remove(filepath)
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"Video exceeds {MAX_VIDEO_BYTES // (1024*1024)} MB limit."
-                )
-            f.write(chunk)
-
-    abs_path = os.path.abspath(filepath)
-    print(f"[API] Saved video: {abs_path} ({total_bytes // 1024} KB)")
+    abs_path = ""
+    if video:
+        filename = f"{uuid.uuid4().hex}{ext}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        total_bytes = 0
+        with open(filepath, "wb") as f:
+            while chunk := await video.read(1024 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_VIDEO_BYTES:
+                    f.close()
+                    os.remove(filepath)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Video exceeds {MAX_VIDEO_BYTES // (1024*1024)} MB limit."
+                    )
+                f.write(chunk)
+        abs_path = os.path.abspath(filepath)
+        print(f"[API] Saved video: {abs_path} ({total_bytes // 1024} KB)")
 
     # -----------------------------------------------------------------------
     # Create DB row immediately — prevents 404 on early status polls

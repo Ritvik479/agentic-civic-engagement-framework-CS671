@@ -249,6 +249,9 @@ async def save_complaint(ctx: ComplaintContext):
                 complaint_ref_id        = excluded.complaint_ref_id,
                 authority_phone         = excluded.authority_phone,
                 user_issue_description  = excluded.user_issue_description,
+                name                    = excluded.name,
+                email                   = excluded.email,
+                phone                   = excluded.phone,
                 error                   = excluded.error,
                 updated_at              = CURRENT_TIMESTAMP
         """, {

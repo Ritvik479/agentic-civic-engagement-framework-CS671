@@ -54,7 +54,7 @@ def submit_to_portal(ctx: dict) -> dict:
         {
             "success":           bool,
             "complaint_ref_id":  str,   # e.g. "COMP-20250417-AB1C2D"
-            "screenshot":        str,   # file path, or "" on failure
+            "submission_screenshot":        str,   # file path, or "" on failure
             "error":             str    # "" on success
         }
     """
@@ -65,7 +65,7 @@ def submit_to_portal(ctx: dict) -> dict:
         return {
             "success":          False,
             "complaint_ref_id": "",
-            "screenshot":       "",
+            "submission_screenshot":       "",
             "error":            (
                 f"Portal unreachable at {PORTAL_BASE_URL}. "
                 "Ensure dummy_portal/app.py is running."
@@ -84,7 +84,7 @@ def submit_to_portal(ctx: dict) -> dict:
             result = {
                 "success":          False,
                 "complaint_ref_id": "",
-                "screenshot":       error_shot,
+                "submission_screenshot":       error_shot,
                 "error":            f"Unexpected error during portal navigation: {e}"
             }
         finally:
@@ -148,10 +148,10 @@ def _run_form_flow(page, ctx: dict) -> dict:
     try:
         # Complainant details
         # Use user_id as fallback name if no dedicated name field in ctx
-        full_name = ctx.get("full_name") or ctx.get("user_id") or "Citizen Complainant"
+        full_name = ctx.get("name") or ctx.get("user_id") or "Citizen Complainant"
         _fill(page, "#full_name", full_name)
-        _fill(page, "#email", ctx.get("user_email") or "complaint@nagrikvaani.test") # FIX
-        _fill(page, "#phone", ctx.get("authority_phone", "")) # FIX
+        _fill(page, "#email", ctx.get("email") or "complaint@nagrikvaani.test")
+        _fill(page, "#phone", ctx.get("phone", ""))
 
         # Location — state uses a <select>, district and label use text inputs
         _select_by_label(page, "#state",          ctx.get("state", ""))
@@ -196,7 +196,7 @@ def _run_form_flow(page, ctx: dict) -> dict:
     return {
         "success":          True,
         "complaint_ref_id": complaint_ref_id,
-        "screenshot":       screenshot_path,
+        "submission_screenshot":       screenshot_path,
         "error":            ""
     }
 
@@ -269,6 +269,6 @@ def _fail(reason: str, page, tracking_id: str) -> dict:
     return {
         "success":          False,
         "complaint_ref_id": "",
-        "screenshot":       screenshot,
+        "submission_screenshot":       screenshot,
         "error":            reason
     }

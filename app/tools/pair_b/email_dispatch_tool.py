@@ -29,6 +29,7 @@ import datetime
 import smtplib
 import traceback
 from email.mime.multipart import MIMEMultipart
+from email.utils import make_msgid
 from email.mime.text import MIMEText
 
 # ---------------------------------------------------------------------------
@@ -116,40 +117,49 @@ def _compose(ctx: dict) -> tuple[str, str]:
         f"[Ref: {complaint_ref} | Tracking: {tracking_id}]"
     )
 
+    # new fields from updated context
+    citizen_name  = ctx.get("name", "").strip() or "Citizen Complainant"
+    citizen_email = ctx.get("email", "").strip()
+    citizen_phone = ctx.get("phone", "").strip()
+
+    contact_line = citizen_email
+    if citizen_phone:
+        contact_line += f" | {citizen_phone}"
+
     body = f"""
-To,
-The {authority_name},
+    To,
+    The {authority_name},
 
-Subject: Formal Complaint Regarding {issue_type} at {location}
+    Subject: Formal Complaint Regarding {issue_type} at {location}
 
-Date: {date_str}
-Complaint Reference ID: {complaint_ref}
-System Tracking ID: {tracking_id}
-Severity Level: {severity} / 4
+    Date: {date_str}
+    Complaint Reference ID: {complaint_ref}
+    System Tracking ID: {tracking_id}
+    Severity Level: {severity} / 5
 
-Dear Sir/Madam,
+    Dear Sir/Madam,
 
-{complaint_text}
+    {complaint_text}
 
-This complaint has been filed through the NagrikVaani Automated Civic
-Complaint System on behalf of a citizen activist who has documented this
-violation. Supporting evidence (video/images) was captured at the location
-mentioned above.
+    This complaint has been filed through the NagrikVaani Automated Civic
+    Complaint System on behalf of a citizen who has documented this violation.
+    Supporting evidence (video/images) was captured at the location mentioned above.
 
-We request that the concerned authority:
-  1. Acknowledge receipt of this complaint within 48 hours.
-  2. Initiate an on-ground inspection at the earliest.
-  3. Provide a resolution timeline and action taken report.
+    We request that the concerned authority:
+    1. Acknowledge receipt of this complaint within 48 hours.
+    2. Initiate an on-ground inspection at the earliest.
+    3. Provide a resolution timeline and action taken report.
 
-Failure to respond within the prescribed SLA may result in automatic
-escalation to higher authorities.
+    Failure to respond within the prescribed SLA may result in automatic
+    escalation to higher authorities.
 
-Yours faithfully,
-NagrikVaani Complaint System
-Automated Civic Grievance Platform
----
-This is a system-generated email. For queries, cite Ref: {complaint_ref}.
-""".strip()
+    Yours faithfully,
+    {citizen_name}
+    Filed via NagrikVaani — Automated Civic Grievance Platform
+    Contact: {contact_line}
+    ---
+    This is a system-generated email. For queries, cite Ref: {complaint_ref}.
+    """.strip()
 
     return subject, body
 
@@ -167,9 +177,10 @@ def _send_smtp(
     """Sends email over SMTP (e.g. Mailtrap). Used when SMTP env vars are set."""
 
     msg = MIMEMultipart("alternative")
-    msg["From"]    = EMAIL_FROM
-    msg["To"]      = to_email
-    msg["Subject"] = subject
+    msg["From"]       = EMAIL_FROM
+    msg["To"]         = to_email
+    msg["Subject"]    = subject
+    msg["Message-ID"] = make_msgid(domain="nagrikvaani.in")
 
     # CC: could be extended to include state/central oversight addresses
     cc_addresses = _build_cc(ctx)
@@ -187,7 +198,7 @@ def _send_smtp(
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(EMAIL_FROM, recipients, msg.as_string())
 
-        message_id = msg.get("Message-ID", f"smtp-{ctx.get('tracking_id', 'unknown')}")
+        message_id = msg["Message-ID"]
         print(f"[EmailDispatch] Email sent to {to_email} | ID: {message_id}")
 
         return {
