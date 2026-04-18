@@ -1,15 +1,6 @@
 # app/routes/api.py
 # ---------------------------------------------------------------------------
 # FastAPI routes for frontend-mobile communication
-#
-# Changes from v1:
-# - All route handlers that call DB functions converted to async def
-# - All DB calls now awaited (database.py is async/aiosqlite)
-# - confirm-location now persists lat/lng to complaints table via
-#   update_location() instead of only writing to logs
-# - run_agent now receives user_lat and user_lng as separate floats
-#   instead of a "lat,lng" string (matches updated context.py fields)
-# - Video written to disk in chunks to avoid loading full file into RAM
 # ---------------------------------------------------------------------------
 
 import os
@@ -24,6 +15,7 @@ from fastapi import (
     BackgroundTasks
 )
 from fastapi.responses import JSONResponse
+from ffmpeg import video
 
 from app.orchestrator import run_agent
 from app.db.database import (
@@ -36,6 +28,13 @@ from app.db.database import (
     update_location          # new — see database.py
 )
 from app.schemas.requests import ConfirmLocationRequest
+from app.schemas.responses import (
+    ProcessResponse,
+    StatusResponse,
+    ConfirmLocationResponse,
+    ComplaintDetailResponse,
+    ComplaintListResponse,
+)
 
 # ---------------------------------------------------------------------------
 # Router setup
@@ -44,7 +43,7 @@ router = APIRouter()
 
 UPLOAD_DIR = "uploads"
 MAX_VIDEO_BYTES = 200 * 1024 * 1024          # 200 MB hard limit
-ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm"}
+ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".jpg", ".jpeg", ".png", ".heic"}
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -56,25 +55,40 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Returns at once:  { "id": "CMP-XXXX", "status": "pending" }
 # Pipeline runs in background via BackgroundTasks.
 # ---------------------------------------------------------------------------
-@router.post("/process")
+@router.post("/process", response_model=ProcessResponse)
 async def process_video(
     background_tasks: BackgroundTasks,
-    video: UploadFile = File(...),
+    video: UploadFile = File(default=None),
+    video_url: str = Form(default=""),
+    name: str = Form(default=""),
+    email: str = Form(default=""),
+    phone: str = Form(default=""),
     state: str = Form(...),
     district: str = Form(...),
+    landmark: str = Form(default=""),
+    user_issue_description: str = Form(default=""),
     user_id: str = Form(default="anonymous"),
 ):
     # -----------------------------------------------------------------------
     # Validate file type — check both MIME type and extension
     # MIME type alone is client-controlled and not trustworthy
     # -----------------------------------------------------------------------
-    ext = os.path.splitext(video.filename or "video.mp4")[1].lower() or ".mp4"
-
-    if not video.content_type.startswith("video/") or ext not in ALLOWED_EXTENSIONS:
+    if not video and not video_url:
+        pass  # media is optional — both absent is allowed
+    if video and video_url:
         raise HTTPException(
             status_code=400,
-            detail=f"Only video files accepted (mp4, mov, avi, webm). Got: {ext}"
+            detail="Provide either a file upload or a video URL, not both."
         )
+    ext = os.path.splitext(video.filename or "video.mp4")[1].lower() or ".mp4"
+
+    if video:
+        allowed_mime_prefixes = ("video/", "image/")
+        if not any(video.content_type.startswith(p) for p in allowed_mime_prefixes) or ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Accepted formats: mp4, mov, avi, webm, jpg, png, heic. Got: {ext}"
+            )
 
     # -----------------------------------------------------------------------
     # Generate tracking ID before anything else
@@ -112,7 +126,11 @@ async def process_video(
     await create_pending_complaint(
         tracking_id=tracking_id,
         user_id=user_id,
-        video_path=abs_path
+        video_path=abs_path if video else "",
+        video_url=video_url,
+        name=name,
+        email=email,
+        phone=phone,
     )
 
     # FIX: was missing await
@@ -125,11 +143,17 @@ async def process_video(
     # -----------------------------------------------------------------------
     background_tasks.add_task(
         run_agent,
-        video_path=abs_path,
+        video_path=abs_path if video else "",
+        video_url=video_url,
         tracking_id=tracking_id,
+        name=name,
+        email=email,
+        phone=phone,
         user_state=state,
         user_district=district,
-        user_id=user_id
+        landmark=landmark,
+        user_issue_description=user_issue_description,
+        user_id=user_id,
     )
 
     return JSONResponse(content={
@@ -148,7 +172,7 @@ async def process_video(
 # so fetch_complaint() and fetch_logs() silently returned coroutine objects
 # instead of executing. Converted to async def.
 # ---------------------------------------------------------------------------
-@router.get("/status/{tracking_id}")
+@router.get("/status/{tracking_id}", response_model=StatusResponse)
 async def get_status(tracking_id: str):
     complaint = await fetch_complaint(tracking_id)
 
@@ -177,7 +201,7 @@ async def get_status(tracking_id: str):
 #         via update_location(). Previously only written to logs,
 #         leaving lat/lng NULL in DB for authority mapping.
 # ---------------------------------------------------------------------------
-@router.post("/confirm-location")
+@router.post("/confirm-location", response_model=ConfirmLocationResponse)
 async def confirm_location(data: ConfirmLocationRequest):
     complaint = await fetch_complaint(data.id)
 
@@ -187,16 +211,15 @@ async def confirm_location(data: ConfirmLocationRequest):
             detail="Tracking ID not found."
         )
 
-    # FIX: persist coordinates to complaints table, not just logs
     await update_location(
         tracking_id=data.id,
         state=data.final_state,
         district=data.final_district,
-        location_label=f"{data.final_district}, {data.final_state}"
+        landmark=data.final_landmark or "",
     )
     await insert_log(
         data.id,
-        f"Location confirmed by user: {data.final_district}, {data.final_state}"
+        f"Location confirmed: {data.final_landmark or ''}, {data.final_district}, {data.final_state}".strip(", ")
     )
 
     await update_status(data.id, "authority_mapped")
@@ -210,7 +233,7 @@ async def confirm_location(data: ConfirmLocationRequest):
 # GET /api/complaint/{tracking_id}
 # Full complaint detail — for complaint detail screen
 # ---------------------------------------------------------------------------
-@router.get("/complaint/{tracking_id}")
+@router.get("/complaint/{tracking_id}", response_model=ComplaintDetailResponse)
 async def get_full_complaint(tracking_id: str):
     complaint = await fetch_complaint(tracking_id)
 
@@ -227,7 +250,7 @@ async def get_full_complaint(tracking_id: str):
 # GET /api/complaints?user_id=xyz
 # Complaint history list — for dashboard
 # ---------------------------------------------------------------------------
-@router.get("/complaints")
+@router.get("/complaints", response_model=ComplaintListResponse)
 async def list_complaints(user_id: str = None):
     slim_list = await fetch_slim_complaints(user_id=user_id)
 

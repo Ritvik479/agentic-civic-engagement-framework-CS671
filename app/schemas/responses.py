@@ -86,10 +86,20 @@ class ComplaintDetailResponse(BaseModel):
     authority_portal: Optional[str]
     complaint_text: Optional[str]
 
+    name: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+    video_url: Optional[str]
+    user_issue_description: Optional[str]
+    landmark: Optional[str]
+
+    authority_level: Optional[str]
+    authority_level_num: Optional[int]
+
     submission_status: Optional[str]
     submission_screenshot: Optional[str]
-    complaint_ref_id: Optional[str]   # ADD
-    authority_phone: Optional[str]    # ADD
+    complaint_ref_id: Optional[str]
+    authority_phone: Optional[str]
 
     error: Optional[str]
 

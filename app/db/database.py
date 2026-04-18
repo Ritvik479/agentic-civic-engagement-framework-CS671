@@ -2,17 +2,6 @@
 # ---------------------------------------------------------------------------
 # SQLite database layer for the Agentic Civic Complaint System
 # Pair B owns this file.
-#
-# Changes from v1:
-# - All DB calls converted to async using aiosqlite
-#   (prevents blocking FastAPI's event loop during frontend polling)
-# - try/finally added to every function so connections always close,
-#   even when an exception is raised mid-pipeline
-# - video_path removed from UPSERT update clause in save_complaint()
-#   (was overwriting the upload path with None on subsequent pipeline calls)
-# - fetch_slim_complaints() rewritten with two explicit queries
-#   instead of string .format() to make SQL injection safety clear
-# - install: pip install aiosqlite
 # ---------------------------------------------------------------------------
 
 import aiosqlite
@@ -45,6 +34,11 @@ async def init_db():
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
                 video_path TEXT,
+                video_url TEXT,
+                name TEXT,
+                email TEXT,
+                phone TEXT,
+                user_issue_description TEXT,
 
                 issue_type TEXT,
 
@@ -54,6 +48,7 @@ async def init_db():
                 state TEXT,
                 district TEXT,
                 location_label TEXT,
+                landmark TEXT,
 
                 severity INTEGER,
                 transcript TEXT,
@@ -95,9 +90,12 @@ async def init_db():
 async def create_pending_complaint(
     tracking_id: str,
     user_id: str,
-    video_path: str
+    video_path: str,
+    video_url: str = "",
+    name: str = "",
+    email: str = "",
+    phone: str = "",
 ):
-    # FIX: wrapped in try/finally — connection always closes even if INSERT fails
     conn = await aiosqlite.connect(DB_PATH)
     try:
         await conn.execute("""
@@ -105,10 +103,14 @@ async def create_pending_complaint(
                 tracking_id,
                 user_id,
                 video_path,
+                video_url,
+                name,
+                email,
+                phone,
                 submission_status
             )
-            VALUES (?, ?, ?, ?)
-        """, (tracking_id, user_id, video_path, "pending"))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (tracking_id, user_id, video_path, video_url, name, email, phone, "pending"))
 
         await conn.commit()
     finally:
@@ -140,17 +142,21 @@ async def update_status(tracking_id: str, status: str):
 # Persists location information to the complaints table so authority mapping
 # can use them directly — this is the source of truth for location.
 # ---------------------------------------------------------------------------
-async def update_location(tracking_id: str, state: str, district: str, location_label: str = ""):
+async def update_location(tracking_id: str, state: str, district: str, landmark: str = "", location_label: str = ""):
+    if not location_label:
+        parts = [p for p in [landmark, district, state] if p]
+        location_label = ", ".join(parts)
     conn = await aiosqlite.connect(DB_PATH)
     try:
         await conn.execute("""
             UPDATE complaints
             SET state          = ?,
                 district       = ?,
+                landmark       = ?,
                 location_label = ?,
                 updated_at     = CURRENT_TIMESTAMP
             WHERE tracking_id  = ?
-        """, (state, district, location_label, tracking_id))
+        """, (state, district, landmark, location_label, tracking_id))
         await conn.commit()
     finally:
         await conn.close()
@@ -201,110 +207,78 @@ async def save_complaint(ctx: ComplaintContext):
     try:
         await conn.execute("""
             INSERT INTO complaints (
-                tracking_id,
-                user_id,
-                video_path,
-
+                tracking_id, user_id, video_path, video_url,
+                name, email, phone, user_issue_description,
                 issue_type,
-                state,
-                district,
-                location_label,
-                severity,
-                transcript,
-
-                authority_name,
-                authority_email,
-                authority_portal,
-                complaint_text,
-                authority_level,
-                authority_level_num,
-
-                submission_status,
-                submission_screenshot,
-                complaint_ref_id,                 # ADD
-                authority_phone,                  # ADD
-
+                state, district, landmark, location_label,
+                severity, transcript,
+                authority_name, authority_email, authority_portal,
+                complaint_text, authority_level, authority_level_num,
+                submission_status, submission_screenshot,
+                complaint_ref_id, authority_phone,
                 error
             )
             VALUES (
-                :tracking_id,
-                :user_id,
-                :video_path,
-
+                :tracking_id, :user_id, :video_path, :video_url,
+                :name, :email, :phone, :user_issue_description,
                 :issue_type,
-                :state,
-                :district,
-                :location_label,
-                :severity,
-                :transcript,
-
-                :authority_name,
-                :authority_email,
-                :authority_portal,
-                :complaint_text,
-
-                :submission_status,
-                :submission_screenshot,
-                :complaint_ref_id,                # ADD
-                :authority_phone,                 # ADD
-
+                :state, :district, :landmark, :location_label,
+                :severity, :transcript,
+                :authority_name, :authority_email, :authority_portal,
+                :complaint_text, :authority_level, :authority_level_num,
+                :submission_status, :submission_screenshot,
+                :complaint_ref_id, :authority_phone,
                 :error
             )
-
             ON CONFLICT(tracking_id) DO UPDATE SET
                 issue_type              = excluded.issue_type,
-
                 state                   = excluded.state,
                 district                = excluded.district,
+                landmark                = excluded.landmark,
                 location_label          = excluded.location_label,
-
                 severity                = excluded.severity,
                 transcript              = excluded.transcript,
-
                 authority_name          = excluded.authority_name,
                 authority_email         = excluded.authority_email,
                 authority_portal        = excluded.authority_portal,
                 complaint_text          = excluded.complaint_text,
                 authority_level         = excluded.authority_level,
                 authority_level_num     = excluded.authority_level_num,
-
                 submission_status       = excluded.submission_status,
                 submission_screenshot   = excluded.submission_screenshot,
-                complaint_ref_id        = excluded.complaint_ref_id,      # ADD
-                authority_phone         = excluded.authority_phone,       # ADD
-
+                complaint_ref_id        = excluded.complaint_ref_id,
+                authority_phone         = excluded.authority_phone,
+                user_issue_description  = excluded.user_issue_description,
                 error                   = excluded.error,
                 updated_at              = CURRENT_TIMESTAMP
-
-                -- FIX: video_path intentionally excluded from UPDATE clause.
-                -- It is written once by create_pending_complaint() at upload
-                -- time and must never be overwritten by later pipeline calls
-                -- (ctx.video_path could be empty at that point).
         """, {
-            "tracking_id":          ctx.tracking_id,
-            "user_id":              ctx.user_id,
-            "video_path":           ctx.video_path,
-
-            "issue_type":           ctx.issue_type,
-            "state":                ctx.state,
-            "district":             ctx.district,
-            "location_label":       ctx.location_label,
-            "severity":             ctx.severity,
-            "transcript":           ctx.transcript,
-
-            "authority_name":       ctx.authority_name,
-            "authority_email":      ctx.authority_email,
-            "authority_portal":     ctx.authority_portal,
-            "complaint_text":       ctx.complaint_text,
-
-            "submission_status":    ctx.submission_status,
-            "submission_screenshot": ctx.submission_screenshot,
-            "complaint_ref_id":      ctx.complaint_ref_id,            # ADD
-            "authority_phone":       ctx.authority_phone,             # ADD
-
-            "error":                ctx.error
+            "tracking_id":              ctx.tracking_id,
+            "user_id":                  ctx.user_id,
+            "video_path":               ctx.video_path,
+            "video_url":                ctx.video_url,
+            "name":                     ctx.name,
+            "email":                    ctx.email,
+            "phone":                    ctx.phone,
+            "user_issue_description":   ctx.user_issue_description,
+            "issue_type":               ctx.issue_type,
+            "state":                    ctx.state,
+            "district":                 ctx.district,
+            "landmark":                 ctx.landmark,
+            "location_label":           ctx.location_label,
+            "severity":                 ctx.severity,
+            "transcript":               ctx.transcript,
+            "authority_name":           ctx.authority_name,
+            "authority_email":          ctx.authority_email,
+            "authority_portal":         ctx.authority_portal,
+            "complaint_text":           ctx.complaint_text,
+            "authority_level":          ctx.authority_level,
+            "authority_level_num":      ctx.authority_level_num,
+            "submission_status":        ctx.submission_status,
+            "submission_screenshot":    ctx.submission_screenshot,
+            "complaint_ref_id":         ctx.complaint_ref_id,
+            "authority_phone":          ctx.authority_phone,
+            "error":                    ctx.error,
         })
-
         await conn.commit()
     finally:
         await conn.close()

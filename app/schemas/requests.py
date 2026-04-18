@@ -10,7 +10,7 @@
 # ---------------------------------------------------------------------------
 
 from pydantic import BaseModel, Field
-
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Request model for POST /confirm-location
@@ -28,3 +28,4 @@ class ConfirmLocationRequest(BaseModel):
     id: str = Field(..., description="Complaint tracking ID")
     final_state: str = Field(..., description="Confirmed state name")
     final_district: str = Field(..., description="Confirmed district name")
+    final_landmark: Optional[str] = Field(None, description="Optional landmark or area")

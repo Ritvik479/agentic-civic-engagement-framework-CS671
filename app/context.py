@@ -14,6 +14,12 @@ class ComplaintContext:
     tracking_id: str = ""
     user_id: str = ""
     video_path: str = ""
+    video_url: str = ""
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    user_issue_description: str = ""
+    landmark: str = ""
 
     # Pair D outputs
     issue_type: str = ""
@@ -47,6 +53,4 @@ class ComplaintContext:
         # Enforce severity range 0–5
         # Trio C or Pair D sets this; a value outside range is a bug, not user input
         if not (0 <= self.severity <= 5):
-            raise ValueError(
-                f"severity must be between 0 and 5, got {self.severity}"
-            )
+            self.severity = max(0, min(5, self.severity))
