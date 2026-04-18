@@ -28,6 +28,7 @@ import json
 from groq import Groq
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
+from sympy import re
 
 # ── Groq client ───────────────────────────────────────────────────────────────
 client     = Groq()  # reads GROQ_API_KEY from environment
@@ -94,10 +95,11 @@ def _vision_location(frame_b64: str, social_caption: str = '') -> dict:
             max_tokens=200,
         )
         raw = response.choices[0].message.content.strip()
-        raw = raw.replace('```json', '').replace('```', '').strip()
-        if raw.startswith('json'):
-            raw = raw[4:].strip()
-        result = json.loads(raw)
+        # FIX
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            raise json.JSONDecodeError("No JSON object found", raw, 0)
+        result = json.loads(match.group(0))
         print(f"  [vision location] {result.get('location', '')} "
               f"(conf={result.get('confidence', 0.0):.2f})")
         return result
@@ -126,8 +128,10 @@ def _transcript_location(transcript: str) -> dict:
             max_tokens=150,
         )
         raw    = response.choices[0].message.content.strip()
-        raw    = raw.replace('```json', '').replace('```', '').strip()
-        result = json.loads(raw)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            raise json.JSONDecodeError("No JSON object found", raw, 0)
+        result = json.loads(match.group(0))
         print(f"  [transcript location] {result.get('location', '')} "
               f"(conf={result.get('confidence', 0.0):.2f})")
         return result
@@ -148,8 +152,8 @@ def _geocode(location_text: str) -> dict:
     if not location_text:
         return {}
     try:
-        query = (location_text if 'india' in location_text.lower()
-                 else location_text + ', India')
+        query = (location_text if re.search(r'\bindia\b', location_text, re.IGNORECASE)
+                else location_text + ', India')
         loc = geolocator.geocode(query, language='en', timeout=10)
         if loc:
             return {
@@ -179,6 +183,9 @@ def _parse_district_state(location_text: str, geocoded: dict) -> tuple:
         if india_idx > 0:
             state    = parts[india_idx - 1] if india_idx >= 1 else ''
             district = parts[india_idx - 2] if india_idx >= 2 else ''
+            # ADD: reject if district resolved to 'India' (wrap-around)
+            if district.lower() == 'india':
+                district = ''
 
     # Fallback — split raw text
     if not state and location_text:
@@ -279,6 +286,14 @@ def resolve_location(
                 final_location = signals[key][0]
                 dominant       = key
                 break
+
+    # ADD THIS:
+    if not final_location:
+        return {
+            'state': '', 'district': '', 'location_label': '',
+            'confidence': 0.0, 'dominant_signal': dominant,
+            'needs_user_input': True,
+        }
 
     # ── Mismatch check — prompt user to confirm if signals disagree ───────────
     needs_user_input = False

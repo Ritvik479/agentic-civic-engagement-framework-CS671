@@ -64,8 +64,8 @@ def run_vision_pipeline(
         user_location = user_location,
     )
 
-    if context.get('error') == 'no_video':
-        return _empty_result("no_video")
+    if context.get('error'):
+        return _empty_result(context['error'])
 
     # ── Agents 1 & 2: run independently on the same context ──────────────────
     # (no interdependency — can be parallelised with ThreadPoolExecutor if needed)
@@ -75,7 +75,7 @@ def run_vision_pipeline(
         frame_b64      = context.get('frame_b64', ''),
         user_location  = user_location,
         social_caption = context.get('social_caption', ''),
-        transcript     = context.get('transcript_en', ''),
+        transcript = context.get('transcript_en') or context.get('transcript', ''),
     )
 
     # ── Assemble orchestrator-compatible output ───────────────────────────────
@@ -84,7 +84,7 @@ def run_vision_pipeline(
 
     # Guard: Nominatim sometimes returns a PIN code as state
     if state.isdigit():
-        state = user_location  # fall back to whatever user provided
+        state = ''
 
     location_label = (
         f"{district}, {state}".strip(', ')
@@ -93,11 +93,14 @@ def run_vision_pipeline(
     )
 
     return {
-        "issue_type":     issue_result.get('issue_type', 'Unknown'),
-        "transcript":     context.get('transcript_en', ''),
-        "state":          state,
-        "district":       district,
-        "location_label": location_label,
+        "issue_type":      issue_result.get('issue_type', 'Unknown'),
+        "transcript":      context.get('transcript_en', ''),
+        "state":           state,
+        "district":        district,
+        "location_label":  location_label,
+        "confidence":      issue_result.get('confidence', 0.0),    # ADD
+        "reasoning":       issue_result.get('reasoning', ''),       # ADD'
+        "needs_user_input": location_result.get('needs_user_input', False),   # ADD
     }
 
 

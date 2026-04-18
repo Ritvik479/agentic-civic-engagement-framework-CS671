@@ -40,6 +40,8 @@ import whisper
 import yt_dlp
 from groq import Groq
 
+from __future__ import annotations
+
 # ── Groq client ───────────────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
 
@@ -101,7 +103,8 @@ def _score_frame(frame) -> float:
 
     person_ratio = person_area / frame_area if frame_area > 0 else 0.0
 
-    if person_ratio > 0.05 or is_studio:
+    # FIX
+    if person_ratio > 0.30 or is_studio:
         return sharpness * 0.01   # heavy penalty for talking-head / studio frames
 
     return sharpness
@@ -119,28 +122,29 @@ def extract_best_frame(video_path: str) -> str:
         raise FileNotFoundError(f"Video not found: {video_path}")
 
     cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise ValueError(f"Cannot open video: {video_path}")
+    try: 
+        if not cap.isOpened():
+            raise ValueError(f"Cannot open video: {video_path}")
 
-    total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    if total_frames < 1:
+        total_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if total_frames < 1:
+            cap.release()
+            raise ValueError("Video has no readable frames")
+
+        sample_points = [i / 10 for i in range(1, 10)]   # 0.1 … 0.9
+        best_frame, best_score = None, -1.0
+
+        for pct in sample_points:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(total_frames * pct))
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            score = _score_frame(frame)
+            print(f"  [frame scorer] {int(pct*100):2d}%: score={score:.1f}")
+            if score > best_score:
+                best_score, best_frame = score, frame.copy()
+    finally:
         cap.release()
-        raise ValueError("Video has no readable frames")
-
-    sample_points = [i / 10 for i in range(1, 10)]   # 0.1 … 0.9
-    best_frame, best_score = None, -1.0
-
-    for pct in sample_points:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(total_frames * pct))
-        ret, frame = cap.read()
-        if not ret:
-            continue
-        score = _score_frame(frame)
-        print(f"  [frame scorer] {int(pct*100):2d}%: score={score:.1f}")
-        if score > best_score:
-            best_score, best_frame = score, frame.copy()
-
-    cap.release()
 
     if best_frame is None:
         raise ValueError("Could not extract any frame from video")
@@ -258,6 +262,25 @@ def _translate_to_english(text: str, source_language: str) -> str:
     print(f"  [translate] {source_language} → English")
     return translated
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Stripping helper
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _strip_vtt(raw: str) -> str:
+    """Remove VTT/SRT headers and timing lines, keep only speech text."""
+    lines = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line == 'WEBVTT':
+            continue
+        if '-->' in line:
+            continue
+        if line.isdigit():        # SRT sequence numbers
+            continue
+        lines.append(line)
+    return ' '.join(lines)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Social media download
@@ -293,7 +316,8 @@ def _extract_from_social_url(url: str) -> dict:
                 sub_file = re.sub(r"\.\w+$", ext, video_path)
                 if os.path.exists(sub_file):
                     with open(sub_file, "r", encoding="utf-8") as f:
-                        auto_subs = f.read()[:2000]
+                        # FIX
+                        auto_subs = _strip_vtt(f.read()[:2000])
                     break
 
             print(f"  [social] Downloaded → {video_path}")
@@ -384,17 +408,19 @@ def extract_context(
     # ── Step 1: Acquire video ────────────────────────────────────────────────
     youtube_auto_subs = ""
 
+    # FIX
     if url:
         print("\n[1/4] Downloading from social media URL...")
         social = _extract_from_social_url(url)
         if social["video_path"] and os.path.exists(social["video_path"]):
             video_path = social["video_path"]
-        context["social_caption"] = social["caption"]
-        context["social_tags"]    = social["tags"]
-        context["social_title"]   = social["title"]
-        youtube_auto_subs         = social["auto_subs"]
-    else:
-        print("\n[1/4] Using uploaded video file...")
+            context["social_caption"] = social["caption"]
+            context["social_tags"]    = social["tags"]
+            context["social_title"]   = social["title"]
+            youtube_auto_subs         = social["auto_subs"]
+        else:
+            # Download failed — do NOT attach social metadata to any fallback video
+            video_path = None
 
     if not video_path or not os.path.exists(video_path):
         print("  No valid video — cannot continue")

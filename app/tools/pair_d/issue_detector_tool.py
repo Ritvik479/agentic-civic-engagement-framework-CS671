@@ -19,6 +19,8 @@ import base64
 from groq import Groq
 from ultralytics import YOLO
 
+from collections import defaultdict
+
 # ── Groq client ───────────────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
 
@@ -57,6 +59,7 @@ _ISSUE_CANONICAL_MAP = {
     'stray_animal':   'Animal Control',
     'sanitation':     'Public Sanitation',
     'infrastructure': 'Infrastructure Damage',
+    'unknown':        'Unknown',           # ADD THIS LINE
 }
 
 # ── Groq Vision fallback prompt ───────────────────────────────────────────────
@@ -116,7 +119,19 @@ def _yolo_detect(frame_path: str) -> dict:
             obj_labels.append(obj_label)
 
     if detections:
-        best = max(detections, key=lambda x: x['confidence'])
+        # FIX
+        scores  = defaultdict(float)
+        reasons = defaultdict(list)
+        for d in detections:
+            scores[d['label']]  += d['confidence']
+            reasons[d['label']].append(d['label'])
+
+        best_label = max(scores, key=scores.__getitem__)
+        best = {
+            'label':      best_label,
+            'confidence': round(min(scores[best_label], 1.0), 3),  # cap at 1.0
+            'reasoning':  f"Detected {', '.join(obj_labels)} in civic area",
+        }
         best['reasoning'] = f"Detected {', '.join(obj_labels)} in civic area"
         print(f"  [YOLO] result → {best}")
         return best
@@ -145,8 +160,10 @@ def _groq_vision_detect(frame_b64: str) -> dict:
             max_tokens=150,
         )
         raw    = response.choices[0].message.content.strip()
-        raw    = raw.replace('```json', '').replace('```', '').strip()
-        result = json.loads(raw)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            raise json.JSONDecodeError("No JSON object found", raw, 0)
+        result = json.loads(match.group(0))
         print(f"  [Groq Vision] {result}")
         return {
             'label':      result.get('label', 'unknown'),
@@ -170,7 +187,7 @@ def _multimodal_refine(
     transcript:    str,
     on_screen:     str,
     whatsapp:      str,
-) -> dict:
+) -> tuple:
     """
     Asks Groq text LLM to verify/refine the visual classification using
     transcript, on-screen text, and WhatsApp context as additional signals.
@@ -193,10 +210,10 @@ def _multimodal_refine(
         raw     = raw.replace('```json', '').replace('```', '').strip()
         refined = json.loads(raw)
         print(f"  [multimodal refine] {refined}")
-        return refined
+        return refined, True
     except Exception as e:
         print(f"  [multimodal refine] failed: {e} — using vision result")
-        return vision_result
+        return vision_result, False
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -244,8 +261,11 @@ def detect_issue(context: dict) -> dict:
         with open(tmp_path, 'wb') as fh:
             fh.write(base64.b64decode(frame_b64))
         print("\n[A] Running YOLO (from b64)...")
-        vision_result = _yolo_detect(tmp_path)
-        os.remove(tmp_path)
+        try:
+            vision_result = _yolo_detect(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
     else:
         print("\n[A] No frame available — skipping YOLO")
 
@@ -256,7 +276,8 @@ def detect_issue(context: dict) -> dict:
 
     # ── Step C: Multimodal refinement ─────────────────────────────────────────
     print("\n[C] Multimodal refinement...")
-    refined = _multimodal_refine(vision_result, transcript, on_screen, whatsapp)
+    # FIX
+    refined, refinement_used = _multimodal_refine(vision_result, transcript, on_screen, whatsapp)
 
     # ── Canonicalise → orchestrator-compatible issue_type ────────────────────
     raw_label  = refined.get('label', 'unknown')
@@ -266,8 +287,10 @@ def detect_issue(context: dict) -> dict:
           f"conf={refined.get('confidence', 0.0):.2f}")
     print("=" * 55)
 
+    # FIX
     return {
-        'issue_type': issue_type,
-        'confidence': float(refined.get('confidence', 0.0)),
-        'reasoning':  refined.get('reasoning', ''),
+        'issue_type':      issue_type,
+        'confidence':      float(refined.get('confidence', 0.0)),
+        'reasoning':       refined.get('reasoning', ''),
+        'refinement_used': refinement_used,
     }
