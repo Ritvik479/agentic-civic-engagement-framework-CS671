@@ -20,6 +20,7 @@ from groq import Groq
 from ultralytics import YOLO
 
 from collections import defaultdict
+import re
 
 # ── Groq client ───────────────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
