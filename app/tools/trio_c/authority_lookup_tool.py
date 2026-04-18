@@ -14,7 +14,6 @@ authority_index = {
     for entry in authority_data
 }
 
-
 def lookup_authority(issue: str, state: str, district: str, severity: int) -> dict:
     """
     Selects authority based on issue, location, and severity.
@@ -44,9 +43,12 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
 
     if not entry:
         return {
-            "authority_name": "Unknown Authority",
-            "authority_email": "",
-            "authority_portal": ""
+            "authority_name":    "Unknown Authority",
+            "authority_email":   "",
+            "authority_portal":  "",
+            "authority_phone":   "",    # ADD
+            "current_level":     "level1",
+            "current_level_num": 1
         }
 
     # Severity → authority level mapping
@@ -62,7 +64,10 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
     authority = entry[selected_level]
 
     return {
-        "authority_name": authority.get("authority", ""),
-        "authority_email": authority.get("email", ""),
-        "authority_portal": authority.get("portal", "")
+        "authority_name":     authority.get("authority", ""),
+        "authority_email":    authority.get("email", ""),
+        "authority_portal":   authority.get("portal", ""),
+        "authority_phone":    authority.get("phone", ""),   # ADD
+        "current_level":      selected_level,
+        "current_level_num":  level_num
     }

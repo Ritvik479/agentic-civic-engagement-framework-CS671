@@ -20,6 +20,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.database import init_db
 from app.routes.api import router
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from app.tools.pair_b.escalation_engine_tool import run_escalation_check
 
 # ---------------------------------------------------------------------------
 # Lifespan startup hook (modern FastAPI replacement for @on_event)
@@ -79,3 +81,15 @@ app.add_middleware(
 # etc.
 # ---------------------------------------------------------------------------
 app.include_router(router, prefix="/api")
+
+scheduler = AsyncIOScheduler()
+scheduler.add_job(run_escalation_check, "interval", minutes=30)
+
+@app.on_event("startup")
+async def startup():
+    await init_db()
+    scheduler.start()
+
+@app.on_event("shutdown")
+async def shutdown():
+    scheduler.shutdown()

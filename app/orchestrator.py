@@ -134,9 +134,12 @@ async def run_agent(
             ctx.severity
         )
 
-        ctx.authority_name = authority["authority_name"]
-        ctx.authority_email = authority["authority_email"]
-        ctx.authority_portal = authority["authority_portal"]
+        ctx.authority_name      = authority["authority_name"]
+        ctx.authority_email     = authority["authority_email"]
+        ctx.authority_portal    = authority["authority_portal"]
+        ctx.authority_phone     = authority["authority_phone"]      # ADD
+        ctx.authority_level     = authority["current_level"]        # ADD
+        ctx.authority_level_num = authority["current_level_num"]    # ADD
 
         await save_complaint(ctx)
         await insert_log(
@@ -179,6 +182,7 @@ async def run_agent(
 
         ctx.submission_status = submission["submission_status"]
         ctx.submission_screenshot = submission["submission_screenshot"]
+        ctx.complaint_ref_id = submission["complaint_ref_id"]   # ADD
 
         await save_complaint(ctx)
         await insert_log(

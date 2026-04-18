@@ -67,6 +67,8 @@ async def init_db():
 
                 submission_status TEXT DEFAULT 'pending',
                 submission_screenshot TEXT,
+                complaint_ref_id TEXT,            -- ADD
+                authority_phone TEXT,             -- ADD
 
                 error TEXT
             )
@@ -219,6 +221,8 @@ async def save_complaint(ctx: ComplaintContext):
 
                 submission_status,
                 submission_screenshot,
+                complaint_ref_id,                 # ADD
+                authority_phone,                  # ADD
 
                 error
             )
@@ -241,6 +245,8 @@ async def save_complaint(ctx: ComplaintContext):
 
                 :submission_status,
                 :submission_screenshot,
+                :complaint_ref_id,                # ADD
+                :authority_phone,                 # ADD
 
                 :error
             )
@@ -264,6 +270,8 @@ async def save_complaint(ctx: ComplaintContext):
 
                 submission_status       = excluded.submission_status,
                 submission_screenshot   = excluded.submission_screenshot,
+                complaint_ref_id        = excluded.complaint_ref_id,      # ADD
+                authority_phone         = excluded.authority_phone,       # ADD
 
                 error                   = excluded.error,
                 updated_at              = CURRENT_TIMESTAMP
@@ -291,6 +299,8 @@ async def save_complaint(ctx: ComplaintContext):
 
             "submission_status":    ctx.submission_status,
             "submission_screenshot": ctx.submission_screenshot,
+            "complaint_ref_id":      ctx.complaint_ref_id,            # ADD
+            "authority_phone":       ctx.authority_phone,             # ADD
 
             "error":                ctx.error
         })

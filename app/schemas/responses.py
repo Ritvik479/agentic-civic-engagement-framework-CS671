@@ -88,6 +88,8 @@ class ComplaintDetailResponse(BaseModel):
 
     submission_status: Optional[str]
     submission_screenshot: Optional[str]
+    complaint_ref_id: Optional[str]   # ADD
+    authority_phone: Optional[str]    # ADD
 
     error: Optional[str]
 

@@ -36,6 +36,8 @@ class ComplaintContext:
     # Pair B outputs
     submission_status: str = "pending"
     submission_screenshot: str = ""
+    complaint_ref_id: str = ""        # ADD — assigned by portal after submission
+    authority_phone: str = ""         # ADD — for WhatsApp dispatch
 
     # Error tracking
     error: Optional[str] = None
