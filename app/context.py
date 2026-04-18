@@ -38,6 +38,7 @@ class ComplaintContext:
     submission_screenshot: str = ""
     complaint_ref_id: str = ""        # ADD — assigned by portal after submission
     authority_phone: str = ""         # ADD — for WhatsApp dispatch
+    full_name: str = ""               # ADD
 
     # Error tracking
     error: Optional[str] = None

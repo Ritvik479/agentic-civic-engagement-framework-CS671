@@ -62,7 +62,7 @@ from app.db.database import (
     insert_log,
     save_complaint,
 )
-from app.tools.pair_b.submission_agent import submit_complaint
+from app.tools.pair_b.submission_agent_tool import submit_complaint
 
 # ---------------------------------------------------------------------------
 # Config

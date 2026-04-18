@@ -150,8 +150,8 @@ def _run_form_flow(page, ctx: dict) -> dict:
         # Use user_id as fallback name if no dedicated name field in ctx
         full_name = ctx.get("full_name") or ctx.get("user_id") or "Citizen Complainant"
         _fill(page, "#full_name", full_name)
-        _fill(page, "#email",     ctx.get("authority_email") or "complaint@nagrikvaani.test")
-        _fill(page, "#phone",     ctx.get("phone", ""))
+        _fill(page, "#email", ctx.get("user_email") or "complaint@nagrikvaani.test") # FIX
+        _fill(page, "#phone", ctx.get("authority_phone", "")) # FIX
 
         # Location — state uses a <select>, district and label use text inputs
         _select_by_label(page, "#state",          ctx.get("state", ""))
@@ -238,18 +238,12 @@ def _select_by_label(page, selector: str, label: str):
     )
 
 
+# FIX
 def _inject_hidden_field(page, field_id: str, value: str):
-    """
-    Sets the value of a hidden input field via JavaScript.
-    Used for agent-supplied fields (severity, authority_name, tracking_id)
-    that are not exposed as visible form elements.
-    """
-    page.evaluate(f"""
-        (() => {{
-            const el = document.getElementById('{field_id}');
-            if (el) el.value = '{value.replace("'", "\\'")}';
-        }})()
-    """)
+    page.evaluate(
+        "([id, val]) => { const el = document.getElementById(id); if (el) el.value = val; }",
+        [field_id, value]
+    )
 
 
 def _save_screenshot(page, tracking_id: str, tag: str = "screenshot") -> str:

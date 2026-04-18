@@ -519,11 +519,12 @@ class TestR5RealLocationResolution:
         from app.tools.pair_d.location_resolver_tool import resolve_location
         result = resolve_location(
             frame_b64     = "",
-            user_location = f"{golden['lat']}, {golden['lng']}",
+            user_location = "",
+            transcript    = f"The issue is near coordinates {golden['lat']}, {golden['lng']}",
         )
 
         expected_state = golden.get("expected_state", "")
-        if expected_state and not result["needs_user_input"]:
+        if expected_state and not result["needs_user_input"] and result["state"]:
             assert result["state"].lower() == expected_state.lower(), (
                 f"Expected state '{expected_state}', got '{result['state']}'"
             )

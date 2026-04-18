@@ -27,7 +27,7 @@ from app.tools.trio_c.severity_score_tool import calculate_severity
 from app.tools.trio_c.complaint_draft_tool import draft_complaint
 
 # Pair B tools
-from app.tools.pair_b.submission_agent import submit_complaint
+from app.tools.pair_b.submission_agent_tool import submit_complaint
 
 
 # ---------------------------------------------------------------------------
