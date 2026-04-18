@@ -52,6 +52,9 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
         }
 
     # Severity → authority level mapping
+    level_num_map = {1: 1, 2: 2, 3: 3, 4: 4, 5: 4}
+    level_num = level_num_map.get(severity, 4)
+
     if severity == 1:
         selected_level = "level1"
     elif severity == 2:
@@ -59,7 +62,7 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
     elif severity == 3:
         selected_level = "level3"
     else:
-        selected_level = "level4"
+        selected_level = "level4"   # covers 4 AND 5
 
     authority = entry[selected_level]
 
