@@ -1,0 +1,44 @@
+[
+  {
+    "file": "pollution.mp4",
+    "issue_type": "air_pollution",
+    "severity": 2,
+    "confidence_min": 0.7
+  },
+  {
+    "file": "garbage_dump.mp4",
+    "issue_type": "waste_management",
+    "severity": 2,
+    "confidence_min": 0.65
+  },
+  {
+    "file": "road_potholes.mp4",
+    "issue_type": "road_damage",
+    "severity": 2,
+    "confidence_min": 0.6
+  },
+  {
+    "file": "sewage_overflow.mp4",
+    "issue_type": "water_pollution",
+    "severity": 2,
+    "confidence_min": 0.7
+  },
+  {
+    "file": "cows_road_block.mp4",
+    "issue_type": "public_safety",
+    "severity": 2,
+    "confidence_min": 0.6
+  },
+  {
+    "file": "silent_video.mp4",
+    "issue_type": "air_pollution",
+    "severity": 2,
+    "confidence_min": 0.6
+  },
+  {
+    "file": "embedded_subtitles.mp4",
+    "issue_type": "air_pollution",
+    "severity": 2,
+    "confidence_min": 0.6
+  }
+]

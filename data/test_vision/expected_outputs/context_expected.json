@@ -1,0 +1,5 @@
+{
+  "video": "garbage_dump.mp4",
+  "expected_issue_type": "Waste Management",
+  "expected_transcript_source": "whisper"
+}

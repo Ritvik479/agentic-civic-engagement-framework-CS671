@@ -1,0 +1,8 @@
+[
+  {
+    "filename": "geotagged_sample.jpg",
+    "expected_lat": 31.756,
+    "expected_lng": 77.099,
+    "tolerance_deg": 0.001
+  }
+]
