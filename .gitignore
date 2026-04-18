@@ -182,11 +182,7 @@ cython_debug/
 .abstra/
 
 # Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
+.vscode/
 
 # Ruff stuff:
 .ruff_cache/
@@ -205,3 +201,42 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ── Virtual environments ──────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Testing & coverage ────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ── YOLO model weights ────────────────────────────────────────
+*.pt
+*.pth
+*.onnx
+
+# ── Whisper model cache ───────────────────────────────────────
+~/.cache/whisper/
+
+# ── Temporary vision pipeline files ──────────────────────────
+# uuid-named frames and audio files written to /tmp by your tools
+/tmp/*.jpg
+/tmp/*.wav
+/tmp/*.srt
+
+# ── yt-dlp downloads ─────────────────────────────────────────
+*.mp4
+*.webm
+*.mkv
+*.vtt
+*.srt
+
+# ── Dummy portal database ─────────────────────────────────────
+dummy_portal/dummy_complaints.db
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

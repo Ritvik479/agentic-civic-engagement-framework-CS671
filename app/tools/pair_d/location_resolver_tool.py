@@ -28,7 +28,7 @@ import json
 from groq import Groq
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
-from sympy import re
+import re
 
 # ── Groq client ───────────────────────────────────────────────────────────────
 client     = Groq()  # reads GROQ_API_KEY from environment

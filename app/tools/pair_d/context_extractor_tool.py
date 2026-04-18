@@ -28,6 +28,8 @@ Output context dict:
     }
 """
 
+from __future__ import annotations
+
 import os
 import re
 import uuid
@@ -39,8 +41,6 @@ import cv2
 import whisper
 import yt_dlp
 from groq import Groq
-
-from __future__ import annotations
 
 # ── Groq client ───────────────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
@@ -69,6 +69,25 @@ Return raw text only, no explanation.
 If no text is visible, return an empty string.
 """
 
+# ═════════════════════════════════════════════════════════════════════════════
+# Stripping helper
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _strip_vtt(raw: str) -> str:
+    """Remove VTT/SRT headers and timing lines, keep only speech text."""
+    lines = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line == 'WEBVTT':
+            continue
+        if '-->' in line:
+            continue
+        if line.isdigit():        # SRT sequence numbers
+            continue
+        lines.append(line)
+    return ' '.join(lines)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Frame extraction helpers
@@ -222,10 +241,11 @@ def _get_transcript(video_path: str, youtube_auto_subs: str = '') -> dict:
             print(f"  [transcript] embedded subtitles ({len(text)} chars)")
             return {"text": text, "language": "unknown", "source": "embedded_subtitle"}
 
-    # Priority 2 — YouTube auto-subs (passed in from yt-dlp extraction)
+    # Priority 2 — YouTube auto-subs (FIXED)
     if youtube_auto_subs:
-        print(f"  [transcript] YouTube auto-subs ({len(youtube_auto_subs)} chars)")
-        return {"text": youtube_auto_subs, "language": "unknown", "source": "youtube_auto_sub"}
+        cleaned = _strip_vtt(youtube_auto_subs)
+        print(f"  [transcript] YouTube auto-subs ({len(cleaned)} chars)")
+        return {"text": cleaned, "language": "unknown", "source": "youtube_auto_sub"}
 
     # Priority 3 — Whisper
     print("  [transcript] Running Whisper...")
@@ -261,26 +281,6 @@ def _translate_to_english(text: str, source_language: str) -> str:
     translated = response.choices[0].message.content.strip()
     print(f"  [translate] {source_language} → English")
     return translated
-
-# ═════════════════════════════════════════════════════════════════════════════
-# Stripping helper
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _strip_vtt(raw: str) -> str:
-    """Remove VTT/SRT headers and timing lines, keep only speech text."""
-    lines = []
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        if line == 'WEBVTT':
-            continue
-        if '-->' in line:
-            continue
-        if line.isdigit():        # SRT sequence numbers
-            continue
-        lines.append(line)
-    return ' '.join(lines)
 
 # ═════════════════════════════════════════════════════════════════════════════
 # Social media download
