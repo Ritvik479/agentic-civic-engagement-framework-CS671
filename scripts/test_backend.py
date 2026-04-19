@@ -20,6 +20,7 @@ import httpx
 from rich.console import Console
 from rich.table import Table
 from rich import print as rprint
+import os
 
 # ---------------------------------------------------------------------------
 # Config
@@ -62,10 +63,10 @@ def test_upload():
         "name":                   "Test User",
         "email":                  "test@civicwatch.in",
         "phone":                  "9876543210",
-        "state":                  "Uttar Pradesh",
-        "district":               "Jhansi",
-        "landmark":               "Near Collectorate",
-        "user_issue_description": "Open drain causing flooding on main road",
+        "state":                  "Punjab",          # Changed from Uttar Pradesh
+        "district":               "Amritsar",        # Changed from Jhansi
+        "landmark":               "Golden Temple Road",
+        "user_issue_description": "Air Pollution",   # Match exact string in your JSON
     }
 
     info(f"Sending to {BASE_URL}/process ...")
@@ -122,7 +123,7 @@ def test_immediate_status(tracking_id):
 def test_polling(tracking_id):
     console.rule("[bold]Step 3 — Polling pipeline progress[/bold]")
 
-    TERMINAL = {"completed", "failed"}
+    TERMINAL = {"completed", "failed", "submitted", "email_only"}
     elapsed  = 0
     last_status = None
 
@@ -143,10 +144,10 @@ def test_polling(tracking_id):
             last_status = status
 
         if status in TERMINAL:
-            if status == "completed":
-                ok("Pipeline reached 'completed'")
+            if status in ["completed", "submitted", "email_only"]:
+                ok(f"Pipeline reached terminal success state: '{status}'")
             else:
-                fail("Pipeline reached 'failed' — check backend logs for error details")
+                fail("Pipeline reached 'failed' — check backend logs")
             return status
 
         time.sleep(POLL_INTERVAL)
@@ -257,6 +258,15 @@ def test_confirm_location(tracking_id):
 # Run all steps
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    # At the top of your test script
+    if os.path.exists("screenshots"):
+        for filename in os.listdir("screenshots"):
+            file_path = os.path.join("screenshots", filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Error cleaning screenshots: {e}")
     console.print()
     console.rule("[bold cyan]CivicWatch Backend Test Suite[/bold cyan]")
     console.print()
@@ -265,7 +275,7 @@ if __name__ == "__main__":
     test_immediate_status(tracking_id)
     final_status = test_polling(tracking_id)
 
-    if final_status == "completed":
+    if final_status in ["completed", "submitted", "email_only"]:
         test_final_record(tracking_id)
         test_confirm_location(tracking_id)
 

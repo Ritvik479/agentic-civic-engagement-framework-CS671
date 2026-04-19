@@ -52,7 +52,19 @@ def submit_complaint(ctx: dict) -> dict:
             "error":                 str    # "" on success
         }
     """
-
+    # --- ADD THIS BLOCK ---
+    if ctx.get("authority_name") == "Unknown Authority" or not ctx.get("authority_portal"):
+        print("[SubmissionAgent] ABORTING: No valid authority or portal URL found.")
+        return {
+            "success": False,
+            "submission_status": "failed",
+            "error": "Missing authority mapping for this location/issue.",
+            "portal_result": {"success": False, "error": "No portal URL"},
+            "email_result": {"success": False, "error": "No email address"},
+            "whatsapp_result": {"success": False, "error": "No phone number"}
+        }
+    # ----------------------
+    
     print("\n[SubmissionAgent] Starting multi-channel dispatch...")
     print(f"  Tracking ID:    {ctx.get('tracking_id', 'N/A')}")
     print(f"  Authority:      {ctx.get('authority_name', 'N/A')}")

@@ -170,9 +170,7 @@ def _run_form_flow(page, ctx: dict) -> dict:
         return _fail(f"Form fill timed out: {e}", page, tracking_id)
 
     # ── Step 4: Submit ──
-    # ── Step 4: Submit ──
     try:
-        _save_screenshot(page, tracking_id, tag="before_submit")
         print(f"[PortalNavigator] Current URL before submit: {page.url}")
         print(f"[PortalNavigator] Button visible: {page.locator('button.btn-submit').is_visible()}")
         page.locator("button.btn-submit").click()
@@ -198,14 +196,11 @@ def _run_form_flow(page, ctx: dict) -> dict:
     if not complaint_ref_id:
         return _fail("Complaint ref ID element was empty.", page, tracking_id)
 
-    # ── Step 6: Screenshot of confirmation page ──
-    screenshot_path = _save_screenshot(page, tracking_id, tag="confirmation")
-
     return {
-        "success":          True,
-        "complaint_ref_id": complaint_ref_id,
-        "submission_screenshot":       screenshot_path,
-        "error":            ""
+        "success":           True,
+        "complaint_ref_id":   complaint_ref_id,
+        "submission_screenshot": "",  # Change this from screenshot_path to empty string
+        "error":             ""
     }
 
 

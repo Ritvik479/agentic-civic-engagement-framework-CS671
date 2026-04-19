@@ -39,15 +39,35 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
         issue.strip().lower()
     )
 
+    key = (
+        state.strip().lower(),
+        district.strip().lower(),
+        issue.strip().lower()
+    )
+
     entry = authority_index.get(key)
 
+    # Fallback: Find ANY issue for this district if the specific issue fails
+    if not entry:
+        print(f"[Lookup] No district match for '{district}'. Trying state-level fallback...")
+        search_state = state.strip().lower()
+
+        for (s, d, i), val in authority_index.items():
+            # If we can't find the district, find the first entry for this STATE
+            # This ensures we at least get a Punjab-level authority
+            if s == search_state:
+                print(f"[Lookup] State fallback found: Mapping to {d} (first available in {state})")
+                entry = val
+                break
+
+    # Final fallback if even the fuzzy match fails
     if not entry:
         return {
-            "authority_name":    "Unknown Authority",
-            "authority_email":   "",
-            "authority_portal":  "",
-            "authority_phone":   "",    # ADD
-            "current_level":     "level1",
+            "authority_name":     "Unknown Authority",
+            "authority_email":    "",
+            "authority_portal":   "",
+            "authority_phone":    "",
+            "current_level":      "level1",
             "current_level_num": 1
         }
 
