@@ -148,18 +148,24 @@ def _transcript_location(transcript: str) -> dict:
 # ═════════════════════════════════════════════════════════════════════════════
 
 def _geocode(location_text: str) -> dict:
-    """Converts free-text location to structured address via Nominatim."""
     if not location_text:
         return {}
     try:
         query = (location_text if re.search(r'\bindia\b', location_text, re.IGNORECASE)
-                else location_text + ', India')
-        loc = geolocator.geocode(query, language='en', timeout=10)
+                 else location_text + ', India')
+        loc = geolocator.geocode(
+            query,
+            language='en',
+            timeout=10,
+            addressdetails=True,   # ← ADD THIS
+        )
         if loc:
+            raw = loc.raw.get('address', {})
             return {
                 'display_name': loc.address,
                 'latitude':     loc.latitude,
                 'longitude':    loc.longitude,
+                'address':      raw,           # ← structured dict from Nominatim
             }
     except GeocoderTimedOut:
         print("  [geocode] timed out")
@@ -170,34 +176,42 @@ def _geocode(location_text: str) -> dict:
 
 def _parse_district_state(location_text: str, geocoded: dict) -> tuple:
     """
-    Extracts (district, state) from Nominatim display_name.
+    Extracts (district, state) from Nominatim structured address fields.
     Falls back to splitting raw location_text if geocoding returned nothing.
     """
     district, state = '', ''
 
-    if geocoded.get('display_name'):
-        parts     = [p.strip() for p in geocoded['display_name'].split(',')]
-        india_idx = next(
-            (i for i, p in enumerate(parts) if p.lower() == 'india'), -1
+    addr = geocoded.get('address', {})
+    if addr:
+        # Nominatim's structured keys in priority order
+        state = (
+            addr.get('state') or
+            addr.get('state_district') or
+            ''
         )
-        if india_idx > 0:
-            state    = parts[india_idx - 1] if india_idx >= 1 else ''
-            district = parts[india_idx - 2] if india_idx >= 2 else ''
-            # ADD: reject if district resolved to 'India' (wrap-around)
-            if district.lower() == 'india':
-                district = ''
+        district = (
+            addr.get('district') or
+            addr.get('county') or
+            addr.get('city_district') or
+            addr.get('suburb') or
+            addr.get('city') or
+            addr.get('town') or
+            ''
+        )
 
-    # Fallback — split raw text
+    # Fallback — split raw text if geocoding returned nothing
     if not state and location_text:
         parts = [p.strip() for p in location_text.split(',')]
         if len(parts) >= 2:
-            district, state = parts[0], parts[1]
+            district, state = parts[0], parts[-1]
         elif len(parts) == 1:
             district = parts[0]
 
-    # Guard: Nominatim sometimes returns a PIN code as state
+    # Guard: reject numeric values (PIN codes leaking through)
     if state.isdigit():
         state = ''
+    if district.isdigit():
+        district = ''
 
     return district, state
 
@@ -309,6 +323,10 @@ def resolve_location(
     geocoded         = _geocode(final_location)
     district, state  = _parse_district_state(final_location, geocoded)
 
+    # If we have a location label but couldn't resolve a state, flag it
+    if not state and not user_location.strip():
+        needs_user_input = True
+    
     location_label = (
         f"{district}, {state}".strip(', ')
         if (district or state)

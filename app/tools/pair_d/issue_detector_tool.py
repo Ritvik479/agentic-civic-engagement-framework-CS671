@@ -41,9 +41,6 @@ _ISSUE_MAP = {
     'vase': 'garbage', 'scissors': 'garbage', 'toothbrush': 'garbage',
     'teddy bear': 'garbage',
     'toilet': 'sanitation', 'sink': 'sanitation',
-    'car': 'road_blockage', 'truck': 'road_blockage',
-    'motorcycle': 'road_blockage', 'bus': 'road_blockage',
-    'bicycle': 'road_blockage', 'train': 'road_blockage',
     'cow': 'stray_animal', 'dog': 'stray_animal', 'cat': 'stray_animal',
     'horse': 'stray_animal', 'elephant': 'stray_animal',
     'bear': 'stray_animal', 'zebra': 'stray_animal',
@@ -71,8 +68,9 @@ This is from a civic complaint video about environmental or infrastructure issue
 Identify what civic problem is shown. Choose exactly one category from this list:
 - garbage (waste pile, litter, dump yard, trash, dirty area)
 - pollution (dirty river, smoke, chemical waste, water pollution)
-- drain (blocked drain, sewage overflow, waterlogging on road)
-- road_blockage (broken road, pothole, encroachment, blocked path)
+- drain (blocked drain, sewage overflow, standing water in a channel or gutter)
+- road_blockage (broken road surface, pothole, crater in road, cracked asphalt,
+                 encroachment, path blocked by debris)
 - stray_animal (stray dogs or cows on road or in public space)
 - sanitation (open defecation area, dirty public toilet)
 - infrastructure (broken streetlight, damaged public property, broken road sign)
@@ -111,12 +109,14 @@ def _yolo_detect(frame_path: str) -> dict:
     detections = []
     obj_labels = []
 
+    _YOLO_MIN_CONF = 0.40   # tune this — 0.40 is a reasonable civic floor
+
     for box in results.boxes:
         obj_label = results.names[int(box.cls)]
         conf      = float(box.conf)
         issue     = _ISSUE_MAP.get(obj_label)
         print(f"    [YOLO] {obj_label:20s} conf={conf:.2f} → {issue or 'not in map'}")
-        if issue:
+        if issue and conf >= _YOLO_MIN_CONF:          # ← ADD THIS GATE
             detections.append({'label': issue, 'confidence': round(conf, 3)})
             obj_labels.append(obj_label)
 
