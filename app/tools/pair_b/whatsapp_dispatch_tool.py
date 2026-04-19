@@ -158,10 +158,8 @@ def _resolve_phone(ctx: dict) -> str:
 
     # Ensure leading + for international format
     if not digits.startswith("+"):
-        print(
-            f"[WhatsAppDispatch] WARNING: No country code in '{raw}' — "
-            "assuming +91 (India). Set authority_phone with full E.164 format to suppress this."
-        )
+        if digits.startswith("0"):
+            digits = digits[1:]   # strip STD trunk prefix before adding country code
         digits = "+91" + digits
 
     # Basic sanity: E.164 is 8–15 digits after +

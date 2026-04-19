@@ -4,7 +4,6 @@ import asyncio
 import httpx
 
 BASE_URL  = "http://localhost:8000/api"
-VIDEO_PATH = "data/test_vision/videos/road_pothole.mp4"   # see Step 4
 
 POLL_INTERVAL = 3    # seconds between status polls
 POLL_TIMEOUT  = 300  # 5 minutes max for full pipeline
@@ -23,7 +22,7 @@ async def run_e2e():
                 "state":                  "Himachal Pradesh",
                 "district":               "Shimla",
                 "landmark":               "Near Mall Road",
-                "user_issue_description": "Garbage dumped near the road for 3 days",
+                "user_issue_description": "Stray animals on road causing blockage",
                 "user_id":                "test-user-001",
             }, files={"video": ("test_video.mp4", f, "video/mp4")})
 
@@ -129,4 +128,18 @@ def _check_mock_log(filepath: str, tracking_id: str, channel: str):
 
 
 if __name__ == "__main__":
+    import sys
+
+    video_options = {
+        "stray":     ("data/test_vision/videos/stray_animals.mp4",     "Stray animals roaming near residential area causing disturbance"),
+        "pollution": ("data/test_vision/videos/pollution_smoke.mp4",    "Heavy smoke and fumes from factory chimney near residential colony"),
+    }
+
+    choice = sys.argv[1] if len(sys.argv) > 1 else "stray"
+    if choice not in video_options:
+        print(f"Unknown option '{choice}'. Choose from: {list(video_options.keys())}")
+        sys.exit(1)
+
+    VIDEO_PATH, USER_DESCRIPTION = video_options[choice]
+    print(f"[E2E] Running with: {VIDEO_PATH}")
     asyncio.run(run_e2e())
