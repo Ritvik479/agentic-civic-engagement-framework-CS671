@@ -78,7 +78,7 @@ async def run_agent(
         ctx.issue_type     = vision_result.get("issue_type", "Unknown")
         ctx.transcript     = vision_result.get("transcript", "")
         ctx.state          = vision_result.get("state")     or user_state
-        ctx.district       = vision_result.get("district")  or user_district
+        ctx.district       = vision_result.get("district")  if vision_result.get("district") != vision_result.get("location_label") else user_district
         ctx.location_label = vision_result.get("location_label") or user_location
 
         await save_complaint(ctx)

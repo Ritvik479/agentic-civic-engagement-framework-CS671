@@ -133,6 +133,8 @@ async def process_video(
         name=name,
         email=email,
         phone=phone,
+        state=state,
+        district=district,
     )
 
     # FIX: was missing await

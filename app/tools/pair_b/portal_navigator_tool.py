@@ -159,23 +159,31 @@ def _run_form_flow(page, ctx: dict) -> dict:
         _fill(page, "#location_label",            ctx.get("location_label", ""))
 
         # Issue type — also a <select>
-        _select_by_label(page, "#issue_type",     ctx.get("issue_type", "Other"))
+        issue_type = ctx.get("issue_type") or "Other"
+        _select_by_label(page, "#issue_type", issue_type)
 
         # Description — use complaint_text drafted by Trio C
-        description = ctx.get("complaint_text") or ctx.get("transcript") or ""
+        description = ctx.get("complaint_text") or ctx.get("transcript") or "Civic issue reported via NagrikVaani automated system."
         _fill(page, "#description",               description[:2000])  # portal maxlength
 
     except PlaywrightTimeoutError as e:
         return _fail(f"Form fill timed out: {e}", page, tracking_id)
 
     # ── Step 4: Submit ──
+    # ── Step 4: Submit ──
     try:
-        page.get_by_role("button", name="Submit Complaint").click()
+        _save_screenshot(page, tracking_id, tag="before_submit")
+        print(f"[PortalNavigator] Current URL before submit: {page.url}")
+        print(f"[PortalNavigator] Button visible: {page.locator('button.btn-submit').is_visible()}")
+        page.locator("button.btn-submit").click()
+        print(f"[PortalNavigator] Click fired, waiting for redirect...")
         page.wait_for_url(
-            f"{PORTAL_BASE_URL}/complaint/confirm/**",
+            f"{PORTAL_BASE_URL}/complaint/confirm/*",
             timeout=NAVIGATION_TIMEOUT_MS
         )
     except PlaywrightTimeoutError:
+        _save_screenshot(page, tracking_id, tag="after_timeout")
+        print(f"[PortalNavigator] URL after timeout: {page.url}")
         return _fail("Timed out waiting for confirmation page after submit.", page, tracking_id)
 
     # ── Step 5: Extract complaint reference ID ──

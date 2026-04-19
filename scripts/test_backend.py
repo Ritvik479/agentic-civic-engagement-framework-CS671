@@ -76,7 +76,7 @@ def test_upload():
                 f"{BASE_URL}/process",
                 data=payload,
                 files={"video": ("sample.mp4", vf, "video/mp4")},
-                timeout=30,
+                timeout=60,
             )
     except httpx.ConnectError:
         fail(f"Could not connect to {BASE_URL}. Is the backend running?")

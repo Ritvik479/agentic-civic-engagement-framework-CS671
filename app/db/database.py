@@ -95,6 +95,8 @@ async def create_pending_complaint(
     name: str = "",
     email: str = "",
     phone: str = "",
+    state: str = "",
+    district: str = "",
 ):
     conn = await aiosqlite.connect(DB_PATH)
     try:
@@ -107,10 +109,12 @@ async def create_pending_complaint(
                 name,
                 email,
                 phone,
+                state,
+                district,
                 submission_status
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (tracking_id, user_id, video_path, video_url, name, email, phone, "pending"))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (tracking_id, user_id, video_path, video_url, name, email, phone, state, district, "pending"))
 
         await conn.commit()
     finally:
