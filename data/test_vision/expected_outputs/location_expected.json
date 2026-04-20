@@ -1,0 +1,7 @@
+{
+  "lat": 31.756,
+  "lng": 77.099,
+  "expected_state": "Himachal Pradesh",
+  "expected_district": "Mandi",
+  "expected_resolution_method": "gps"
+}

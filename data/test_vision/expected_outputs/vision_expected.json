@@ -1,0 +1,9 @@
+[
+  { "file": "pollution_smoke.mp4",           "issue_type": "Air Pollution",       "confidence_min": 0.7  },
+  { "file": "garbage_dump.mp4",        "issue_type": "Waste Management",    "confidence_min": 0.65 },
+  { "file": "road_potholes.mp4",       "issue_type": "Road Damage",         "confidence_min": 0.6  },
+  { "file": "sewage_overflow.mp4",     "issue_type": "Water Pollution",     "confidence_min": 0.7  },
+  { "file": "cows_road_block.mp4",     "issue_type": "Animal Control",      "confidence_min": 0.6  },
+  { "file": "silent_video.mp4",        "issue_type": "Unknown",             "confidence_min": 0.0  },
+  { "file": "embedded_subtitles.mp4",  "issue_type": "Air Pollution",       "confidence_min": 0.6  }
+]

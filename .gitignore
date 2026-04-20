@@ -1,5 +1,102 @@
-venv/
+# python cache / compiled
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# shared libraries
+*.so
+
+# environments
 .env
+.env.*
+frontend/.env
+!frontend/.env.example
+
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# databases (auto-generated)
 *.db
+*.sqlite3
+app/db/complaints.db
+dummy_portal/dummy_complaints.db
+
+# logs
+*.log
+
+# temp / runtime files
+*.tmp
+*.bak
+
+# test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# type checkers / linters
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# notebooks
+.ipynb_checkpoints/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# frontend (expo / react native)
+frontend/node_modules/
+frontend/.expo/
+frontend/dist/
+frontend/web-build/
+
+# expo build artifacts
+frontend/android/
+frontend/ios/
+frontend/*.jks
+frontend/*.p8
+frontend/*.p12
+frontend/*.key
+frontend/*.mobileprovision
+
+# ML / model files
+*.pt
+*.pth
+*.onnx
+
+# caches
+.cache/
+
+# temp vision pipeline outputs
+/tmp/*.jpg
+/tmp/*.wav
+/tmp/*.srt
+
+# project-generated folders
+logs/
+uploads/
+screenshots/
+
+# scripts / local test assets
+scripts/test_assets/
+
+# misc
+.pypirc
+.cursorignore
+.cursorindexingignore
+.abstra/
