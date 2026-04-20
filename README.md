@@ -273,3 +273,80 @@ Conflicts occur when two people edit the same file. To resolve:
 
 > This system works only if:
 > **Clear structure + Shared schema + Clean collaboration = Successful integration**
+
+## Usage Instructions
+# NagrikVaani — Setup & Usage
+
+## Prerequisites
+- Python 3.10+
+- Node.js 18+
+- ffmpeg installed and on PATH
+- Groq API key
+
+---
+
+## 1. Environment variables
+
+**Backend** — create `project-root/.env`:
+```env
+GROQ_API_KEY=your_groq_api_key_here
+DUMMY_PORTAL_URL=http://localhost:5050
+```
+
+**Frontend** — create `frontend/.env`:
+```env
+EXPO_PUBLIC_API_URL=http://<your-IPv4-address>:8000
+```
+
+> Make sure your phone and development machine are on the **same WiFi network**. Find your IPv4 address with `ipconfig` (Windows) or `ifconfig` (macOS/Linux) and replace the placeholder above.
+
+---
+
+## 2. Install dependencies
+
+```bash
+# Backend
+cd project-root
+python -m venv venv
+venv\Scripts\activate        # Windows
+source venv/bin/activate     # macOS/Linux
+pip install -r requirements.txt
+playwright install chromium
+
+# Frontend
+cd frontend
+npm install
+```
+
+---
+
+## 3. Run
+
+Open four terminals:
+
+**Terminal 1 — Frontend**
+```bash
+cd frontend
+npx expo start
+```
+Scan the QR code with Expo Go on your phone.
+
+**Terminal 2 — Backend**
+```bash
+cd project-root
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+**Terminal 3 — Dummy portal**
+```bash
+cd dummy_portal
+python app.py
+```
+
+**Terminal 4 — (optional) E2E test**
+```bash
+cd project-root
+python scripts/test_e2e.py stray
+# or
+python scripts/test_e2e.py pollution
+```
