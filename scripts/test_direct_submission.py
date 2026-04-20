@@ -1,5 +1,5 @@
 """
-scripts/test_backend.py
+scripts/test_direct_submission.py
 
 Tests:
   1. POST /api/process      — upload a dummy video, get tracking ID back

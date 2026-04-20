@@ -66,6 +66,7 @@ async def run_agent(
         # ── 2. Vision pipeline (Pair D) ─────────────────────────────────────
         await _log(tracking_id, "Starting vision analysis...")
         await update_status(tracking_id, "detecting_issue")
+        ctx.submission_status = "detecting_issue"
 
         vision_result = await asyncio.to_thread(
             run_vision_pipeline,
@@ -111,6 +112,7 @@ async def run_agent(
 
         # ── 4. Authority lookup ─────────────────────────────────────────────
         await update_status(tracking_id, "mapping_authority")
+        ctx.submission_status = "mapping_authority"
         await _log(tracking_id, "Mapping to relevant authority...")
 
         authority = lookup_authority(
@@ -167,6 +169,7 @@ async def run_agent(
 
         # ── 6. Complaint drafting ───────────────────────────────────────────
         await update_status(tracking_id, "drafting_complaint")
+        ctx.submission_status = "drafting_complaint"
         await _log(tracking_id, "Drafting formal complaint...")
 
         complaint_text = await asyncio.to_thread(
@@ -187,6 +190,7 @@ async def run_agent(
 
         # ── 7. Multi-channel submission (Pair B) ────────────────────────────
         await update_status(tracking_id, "submitting")
+        ctx.submission_status = "drafting_complaint"
         await _log(tracking_id, "Submitting complaint via portal, email, and WhatsApp...")
 
         submission = await asyncio.to_thread(submit_complaint, asdict(ctx))
