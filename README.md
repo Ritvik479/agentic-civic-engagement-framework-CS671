@@ -1,56 +1,41 @@
-# 🧠 Agentic Civic Complaint System
+# 🧠 Agentic Civic Engagement Framework
 
-An intelligent backend system that converts citizen-uploaded videos (or social media links) into structured government complaints using Computer Vision, NLP, and Agentic AI.
-
----
-
-## 👥 Team Structure & Roles
-
-### 🔹 Pair A — Mobile App (Frontend)
-**Members:** Vitthal, Hritika
-
-**Responsibilities:**
-- Video upload (camera + file picker)
-- Location confirmation UI
-- API calls to backend: `POST /process`, `POST /confirm-location`, `GET /status/:id`
-- Local storage of complaint history (AsyncStorage)
+An intelligent system that converts citizen-captured media (videos or images) into structured government complaints using computer vision, language models, and an agent-based orchestration pipeline.
 
 ---
 
-### 🔹 Pair B — Backend + Agent Orchestration
-**Members:** Ritvik, Vidhi
+## 🚀 Overview
 
-**Responsibilities:**
-- FastAPI server (all endpoints)
-- SmolAgents orchestration (agent loop)
-- Context schema design (**CRITICAL**)
-- SQLite database (tracking + status)
-- Agent 5: Playwright (portal submission)
-- Agent 6: Escalation logic
+This project implements an **agentic pipeline** that:
 
----
+1. Extracts insights from user-submitted media  
+2. Identifies the nature and location of the issue  
+3. Maps it to the appropriate government authority  
+4. Generates a formal complaint  
+5. Submits it via multiple channels (portal, email, etc.)  
+6. Tracks status and supports escalation  
 
-### 🔹 Trio C — Authority Mapping + LLM + Severity
-**Members:** Palak, Vrinda, Himank
-
-**Responsibilities:**
-- Authority mapping (JSON dataset)
-- Severity scoring (LLM)
-- Complaint drafting (LLM)
-- Escalation routing logic
+The system is designed for **environmental and civic issues** such as:
+- Pollution incidents  
+- Waste management violations  
+- Infrastructure problems  
+- Sustainability concerns  
 
 ---
 
-### 🔹 Pair D — Vision + Speech + Location
-**Members:** Vaishnavi, Aishna
+## 🧩 Architecture
+```
+Perception (Vision + Speech)
+↓
+Reasoning (Authority + Severity + Drafting)
+↓
+Execution (Submission + Escalation)
+```
 
-**Responsibilities:**
-- Video download (yt-dlp)
-- Audio extraction + transcription (Whisper)
-- Frame extraction (OpenCV)
-- Vision analysis (Groq Vision)
-- Issue detection (YOLOv8 + LLM)
-- Location resolution (weighted model)
+- **Perception Layer (Pair D)**: Extracts issue type, transcript, and location  
+- **Reasoning Layer (Trio C)**: Determines authority, severity, and complaint text  
+- **Execution Layer (Pair B)**: Handles submission and escalation  
+- **Orchestrator**: Coordinates all agents using a shared context  
 
 ---
 
@@ -58,249 +43,58 @@ An intelligent backend system that converts citizen-uploaded videos (or social m
 ```
 project-root/
 │
-├── app/
-│   ├── main.py
-│   ├── routes/
-│   ├── agents/
-│   ├── tools/
-│   │   ├── pair_d/
-│   │   ├── trio_c/
-│   │   └── pair_b/
-│   ├── db/
-│   └── schemas/
-│   │   ├── context.py  # MASTER context object
+├── app/ # Backend (FastAPI + orchestration)
+│ ├── main.py # Server entry point
+│ ├── orchestrator.py # Core pipeline controller
+│ ├── context.py # Shared context object
+│ ├── routes/ # API endpoints
+│ ├── db/ # Database layer
+│ ├── schemas/ # Request/response models
+│ └── tools/ # Agent tools
+│ ├── pair_d/ # Perception agents
+│ ├── trio_c/ # Reasoning agents
+│ └── pair_b/ # Execution agents
 │
-├── configs/
-│   └── authority_data.json
+├── frontend/ # React Native (Expo) app
+├── dummy_portal/ # Simulated complaint portal
+├── configs/ # Static authority data
+├── data/ # Test inputs and datasets
+├── scripts/ # Testing utilities
 │
-├── data/
-├── scripts/
-│
-├── .env
-├── .env.example
-├── .gitignore
+├── .env # Environment variables (not committed)
 ├── requirements.txt
 └── README.md
 ```
 
----
-
-## 🧩 File Structure Explained
-
-### `app/`
-Main backend codebase.
-
-- **`main.py`** — Entry point of the FastAPI server; registers all routes.
-- **`routes/`** — Defines API endpoints (`/process`, `/status`, etc.); handles request → response mapping only.
-- **`agents/`** — Controls the pipeline via SmolAgents; registers tools and defines execution logic.
-- **`tools/`** — All agent tools grouped by team:
-  - `pair_d/` → extraction, CV, location
-  - `trio_c/` → authority, severity, drafting
-  - `pair_b/` → submission, escalation
-  
-  > 👉 Each team **only** works in their own folder.
-
-- **`db/`** — SQLite logic; stores complaints, status, and tracking IDs.
-- **`schemas/`** — Defines all shared data structures: Context object (**most important**), request schema, response schema.
-
-### `configs/`
-Static data (authority mapping JSON). Maintained by Trio C.
-
-### `data/`
-Sample inputs (videos, links).
-
-### `scripts/`
-Testing and debug scripts.
 
 ---
 
-## 🔐 Secrets & Configuration
+## ⚙️ Setup & Installation
 
-### `.env` — Secrets File
-
-Stores sensitive data like API keys. **Never commit this file.**
-```env
-GROQ_API_KEY=your_api_key_here
-OPENAI_API_KEY=your_api_key_here
-```
-
-**Reading it in Python:**
-```python
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-api_key = os.getenv("GROQ_API_KEY")
-```
-
-### `.env.example` — Template for the team
-```env
-GROQ_API_KEY=your_key_here
-OPENAI_API_KEY=your_key_here
-```
-
-### `.gitignore`
-
-Prevents secrets and unnecessary files from being tracked by Git.
-```
-venv/
-__pycache__/
-*.pyc
-.env
-*.db
-```
-
----
-
-## 📦 Dependencies
-
-### Core (Everyone installs)
-```
-fastapi
-uvicorn
-pydantic
-python-dotenv
-requests
-```
-
-### Pair B — Backend
-```
-smolagents
-playwright
-```
-After installing, run:
-```bash
-playwright install
-```
-
-### Trio C — LLM
-```
-openai   # or groq
-```
-
-### Pair D — Vision/Speech (Heavy)
-```
-yt-dlp
-opencv-python
-ultralytics
-whisper
-ffmpeg
-geopy
-```
-> ⚠️ May require a GPU — use Google Colab if needed.
-
----
-
-## 🌿 GitHub Workflow
-
-### Branches
-
-| Branch | Purpose |
-|---|---|
-| `main` | Stable, reviewed code only |
-| `pair-a-mobile` | Pair A working branch |
-| `pair-b-backend` | Pair B working branch |
-| `trio-c-authority` | Trio C working branch |
-| `pair-d-vision` | Pair D working branch |
-
-### Daily Workflow
-
-**Before starting work:**
-```bash
-git pull origin <your-branch>
-```
-
-**After making changes:**
-```bash
-git add .
-git commit -m "Clear, descriptive message"
-git push origin <your-branch>
-```
-
-### Commit Message Guidelines
-
-| ✅ Good | ❌ Bad |
-|---|---|
-| `Add YOLO-based issue detection` | `update` |
-| `Fix location resolution bug` | `changes` |
-
-### Pull Requests
-
-- Required before merging into `main`
-- Must be reviewed and approved by at least one teammate
-
-### Merge Checklist
-
-Only merge when:
-- [ ] Code runs without errors
-- [ ] No breaking changes introduced
-- [ ] Compatible with the shared schema
-
-### Resolving Merge Conflicts
-
-Conflicts occur when two people edit the same file. To resolve:
-1. Open the conflicted file
-2. Manually choose the correct code
-3. Remove conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)
-4. Re-commit the resolved file
-
----
-
-## ⚠️ Important Rules
-
-1. **Always pull before working** — prevents overwriting others' changes.
-2. **Do not modify other teams' folders** — avoids unnecessary conflicts.
-3. **Follow the schema strictly** — breaking the schema breaks the entire pipeline.
-4. **Test your tool independently** — each tool should work as: `input → output`.
-5. **Keep commits small and frequent** — easier to debug and merge.
-
----
-
-## 🚀 Development Order
-
-1. Set up the environment
-2. Finalize the context schema
-3. Build tools independently
-4. Start integration early
-5. Test the end-to-end pipeline
-
----
-
-## 🧠 Final Note
-
-> This system works only if:
-> **Clear structure + Shared schema + Clean collaboration = Successful integration**
-
-## Usage Instructions
-# NagrikVaani — Setup & Usage
-
-## Prerequisites
+### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- ffmpeg installed and on PATH
-- Groq API key
+- `ffmpeg` installed and available in PATH
+- API key (e.g., Groq/OpenAI)
 
 ---
 
-## 1. Environment variables
+### 1. Environment Variables
 
-**Backend** — create `project-root/.env`:
+Create a `.env` file in the project root:
+
 ```env
-GROQ_API_KEY=your_groq_api_key_here
-DUMMY_PORTAL_URL=http://localhost:5050
+GROQ_API_KEY=your_api_key_here
 ```
 
-**Frontend** — create `frontend/.env`:
+Frontend (`frontend/.env`):
 ```env
-EXPO_PUBLIC_API_URL=http://<your-IPv4-address>:8000
+EXPO_PUBLIC_API_URL=http://<your-ip>:8000
 ```
 
-> Make sure your phone and development machine are on the **same WiFi network**. Find your IPv4 address with `ipconfig` (Windows) or `ifconfig` (macOS/Linux) and replace the placeholder above.
+Ensure your phone and development machine are on the same network when testing the mobile app.
 
----
-
-## 2. Install dependencies
-
+### 2. Install Dependencies
 ```bash
 # Backend
 cd project-root
@@ -315,35 +109,88 @@ cd frontend
 npm install
 ```
 
----
-
-## 3. Run
-
-Open four terminals:
-
-**Terminal 1 — Frontend**
+### 3. Run the System
+Open multiple terminals:
+#### Backend
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+#### Frontend
 ```bash
 cd frontend
 npx expo start
 ```
-Scan the QR code with Expo Go on your phone.
-
-**Terminal 2 — Backend**
-```bash
-cd project-root
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-**Terminal 3 — Dummy portal**
+#### Dummy Portal
 ```bash
 cd dummy_portal
 python app.py
 ```
-
-**Terminal 4 — (optional) E2E test**
+(Optional) Run test script:
 ```bash
-cd project-root
-python scripts/test_e2e.py stray
-# or
-python scripts/test_e2e.py pollution
+python scripts/test_e2e.py
 ```
+
+---
+
+## 🔌 API Endpoints
+
+| Endpoint | Method | Description |
+|--------|--------|------------|
+| `/api/process` | POST | Upload media / provide URL to start pipeline |
+| `/api/status/{id}` | GET | Get current status + logs |
+| `/api/confirm-location` | POST | User confirms detected location |
+| `/api/complaint/{id}` | GET | Full complaint details |
+| `/api/complaints` | GET | List user complaints |
+| `/api/health` | GET | Health check |
+
+---
+
+## 🧠 Key Design Principles
+
+- **Agentic Architecture**  
+  Independent components (agents) handle perception, reasoning, and execution.
+
+- **Orchestrator-Controlled Pipeline**  
+  A central async controller manages execution flow and state transitions.
+
+- **Shared Context Object**  
+  Ensures consistent data flow across all agents.
+
+- **Database-Backed State Machine**  
+  Enables persistence, observability, and recovery.
+
+- **Human-in-the-Loop**  
+  Users can confirm or correct system-inferred locations.
+
+- **Asynchronous Execution**  
+  Long-running tasks run in the background without blocking API responses.
+
+---
+
+## 🔄 Escalation System
+
+A scheduled job periodically checks unresolved complaints and escalates them to higher authorities when needed.
+
+---
+
+## ⚠️ Notes
+
+- This project includes a **dummy complaint portal** for testing submission flows.  
+- Real-world deployment would require integration with actual government systems.  
+- Some components (vision, LLMs) may require significant compute resources.
+
+---
+
+## 📌 Future Improvements
+
+- Integration with real government APIs  
+- Smarter escalation policies  
+- Better location resolution  
+- Multilingual support  
+- Real-time notifications (instead of polling)
+
+---
+
+## 🧠 Summary
+
+This system demonstrates how **AI agents can automate civic engagement workflows**, bridging the gap between citizen reporting and government action.
