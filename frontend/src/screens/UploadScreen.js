@@ -391,7 +391,7 @@ export default function UploadScreen({ navigation }) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 300000);
 
-      const response = await fetch(`${API_URL}/process`, {
+      const response = await fetch(`${API_URL}/api/process`, {
         method: 'POST',
         body: formData,
         signal: controller.signal,

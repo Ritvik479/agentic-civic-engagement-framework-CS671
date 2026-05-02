@@ -53,7 +53,7 @@ export default function TasksScreen({ route }) {
 
     const poll = async () => {
       try {
-        const res = await fetch(`${API_URL}/status/${trackingId}`);
+        const res = await fetch(`${API_URL}/api/status/${trackingId}`);
 
         if (!res.ok) {
           // Non-2xx — surface error but keep polling (backend may be briefly busy)
