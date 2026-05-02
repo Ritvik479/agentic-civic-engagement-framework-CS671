@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   ScrollView,
   StatusBar,
-  TouchableOpacity,
 } from 'react-native';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
@@ -22,7 +21,6 @@ const COLORS = {
   border: '#2a2820',
 };
 
-// Status pipeline — ordered list used to render progress trail
 const STATUS_STEPS = [
   { key: 'pending',           label: 'Complaint received' },
   { key: 'detecting_issue',   label: 'Detecting issue from video' },
@@ -37,54 +35,35 @@ const TERMINAL_STATUSES = new Set(['completed', 'failed']);
 export default function TasksScreen({ route }) {
   const trackingId = route?.params?.trackingId;
 
-  const [status, setStatus] = useState(null);   // current pipeline status string
-  const [logs, setLogs] = useState([]);          // ordered log messages from backend
-  const [error, setError] = useState(null);      // polling error message
-  const intervalRef = useRef(null);              // stable ref so cleanup always works
+  const [status, setStatus] = useState('pending'); // hardcoded for preview
+  const [logs, setLogs] = useState([]);
+  const [error, setError] = useState(null);
+  const intervalRef = useRef(null);
 
-  // -------------------------------------------------------------------------
-  // Polling — restart whenever trackingId changes (fixes stale closure bug)
-  // -------------------------------------------------------------------------
   useEffect(() => {
     if (!trackingId) return;
-
-    // Clear any existing interval before starting a new one
     if (intervalRef.current) clearInterval(intervalRef.current);
 
     const poll = async () => {
       try {
         const res = await fetch(`${API_URL}/status/${trackingId}`);
-
-        if (!res.ok) {
-          // Non-2xx — surface error but keep polling (backend may be briefly busy)
-          setError(`Server returned ${res.status}. Retrying…`);
-          return;
-        }
-
+        if (!res.ok) { setError(`Server returned ${res.status}. Retrying…`); return; }
         const data = await res.json();
         setError(null);
         setStatus(data.status);
         setLogs(data.logs ?? []);
-
-        // Stop polling once terminal state reached
-        if (TERMINAL_STATUSES.has(data.status)) {
-          clearInterval(intervalRef.current);
-        }
-      } catch (err) {
+        if (TERMINAL_STATUSES.has(data.status)) clearInterval(intervalRef.current);
+      } catch {
         setError('Connection error. Retrying…');
       }
     };
 
-    // Poll immediately, then every 3 seconds
     poll();
     intervalRef.current = setInterval(poll, 3000);
-
     return () => clearInterval(intervalRef.current);
-  }, [trackingId]);  // dependency fixed — was [] in original
+  }, [trackingId]);
 
-  // -------------------------------------------------------------------------
-  // Empty state — no trackingId passed yet
-  // -------------------------------------------------------------------------
+  // No active job
   if (!trackingId) {
     return (
       <View style={styles.container}>
@@ -103,31 +82,8 @@ export default function TasksScreen({ route }) {
     );
   }
 
-  // -------------------------------------------------------------------------
-  // Loading state — trackingId present but first poll hasn't returned yet
-  // -------------------------------------------------------------------------
-  if (!status && !error) {
-    return (
-      <View style={styles.container}>
-        <StatusBar barStyle="light-content" />
-        <View style={styles.header}>
-          <Text style={styles.title}>MY REPORTS</Text>
-        </View>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <Text style={styles.loadingText}>Connecting…</Text>
-        </View>
-      </View>
-    );
-  }
-
-  // -------------------------------------------------------------------------
-  // Main view
-  // -------------------------------------------------------------------------
   const isFailed = status === 'failed';
   const isCompleted = status === 'completed';
-  const isTerminal = TERMINAL_STATUSES.has(status);
-
   const currentStepIndex = STATUS_STEPS.findIndex(s => s.key === status);
 
   return (
@@ -141,23 +97,20 @@ export default function TasksScreen({ route }) {
 
       <ScrollView showsVerticalScrollIndicator={false}>
 
-        {/* Connection / polling error banner */}
         {error && (
           <View style={styles.errorBanner}>
             <Text style={styles.errorBannerText}>⚠️ {error}</Text>
           </View>
         )}
 
-        {/* Pipeline progress steps */}
+        {/* Pipeline Steps */}
         <View style={styles.stepsCard}>
           {STATUS_STEPS.map((step, i) => {
             const done = i < currentStepIndex;
             const active = i === currentStepIndex;
-            const pending = i > currentStepIndex;
 
             return (
               <View key={step.key} style={styles.stepRow}>
-                {/* Connector line above (skip first) */}
                 {i > 0 && (
                   <View style={[styles.connector, done && styles.connectorDone]} />
                 )}
@@ -179,7 +132,7 @@ export default function TasksScreen({ route }) {
                     styles.stepLabel,
                     done && styles.stepLabelDone,
                     active && styles.stepLabelActive,
-                    pending && styles.stepLabelPending,
+                    !done && !active && styles.stepLabelPending,
                   ]}>
                     {step.label}
                   </Text>
@@ -189,7 +142,7 @@ export default function TasksScreen({ route }) {
           })}
         </View>
 
-        {/* Log messages */}
+        {/* Logs */}
         {logs.length > 0 && (
           <View style={styles.logsCard}>
             <Text style={styles.logsTitle}>ACTIVITY LOG</Text>
@@ -199,7 +152,7 @@ export default function TasksScreen({ route }) {
           </View>
         )}
 
-        {/* Completed result card */}
+        {/* Completed */}
         {isCompleted && (
           <View style={styles.resultCard}>
             <Text style={styles.resultSuccess}>✅ Complaint Filed</Text>
@@ -210,12 +163,12 @@ export default function TasksScreen({ route }) {
           </View>
         )}
 
-        {/* Failed card */}
+        {/* Failed */}
         {isFailed && (
           <View style={styles.failedCard}>
             <Text style={styles.failedText}>❌ Submission Failed</Text>
             <Text style={styles.failedSub}>
-              Something went wrong during processing. Please try submitting again.
+              Something went wrong. Please try submitting again.
             </Text>
           </View>
         )}
@@ -226,217 +179,37 @@ export default function TasksScreen({ route }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-    padding: 20,
-  },
-
-  header: {
-    marginTop: 40,
-    marginBottom: 20,
-  },
-
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: COLORS.primary,
-    letterSpacing: 2,
-  },
-
-  trackingId: {
-    fontSize: 11,
-    color: COLORS.muted,
-    marginTop: 4,
-    fontFamily: 'monospace',
-    letterSpacing: 1,
-  },
-
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  emptyIcon: {
-    fontSize: 40,
-    marginBottom: 12,
-  },
-
-  emptyText: {
-    color: COLORS.foreground,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  emptySubText: {
-    color: COLORS.muted,
-    fontSize: 13,
-    textAlign: 'center',
-    marginTop: 8,
-    paddingHorizontal: 30,
-    lineHeight: 18,
-  },
-
-  loadingText: {
-    color: COLORS.muted,
-    marginTop: 12,
-    fontSize: 13,
-  },
-
-  errorBanner: {
-    backgroundColor: '#3a1a1a',
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 14,
-  },
-
-  errorBannerText: {
-    color: '#e07070',
-    fontSize: 12,
-  },
-
-  // Pipeline steps
-  stepsCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-
-  stepRow: {
-    alignItems: 'flex-start',
-  },
-
-  connector: {
-    width: 2,
-    height: 14,
-    backgroundColor: COLORS.border,
-    marginLeft: 11,
-  },
-
-  connectorDone: {
-    backgroundColor: COLORS.success,
-  },
-
-  stepDotRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-
-  dot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  dotActive: {
-    backgroundColor: COLORS.primary,
-  },
-
-  dotDone: {
-    backgroundColor: COLORS.success,
-  },
-
-  dotFailed: {
-    backgroundColor: COLORS.accent,
-  },
-
-  dotCheck: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-
-  stepLabel: {
-    fontSize: 13,
-    color: COLORS.muted,
-    flex: 1,
-  },
-
-  stepLabelActive: {
-    color: COLORS.foreground,
-    fontWeight: '600',
-  },
-
-  stepLabelDone: {
-    color: COLORS.success,
-  },
-
-  stepLabelPending: {
-    color: COLORS.muted,
-  },
-
-  // Logs
-  logsCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-
-  logsTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: COLORS.muted,
-    letterSpacing: 1,
-    marginBottom: 10,
-  },
-
-  logLine: {
-    fontSize: 12,
-    color: COLORS.muted,
-    lineHeight: 20,
-  },
-
-  // Result cards
-  resultCard: {
-    backgroundColor: '#1a2e1f',
-    borderWidth: 1,
-    borderColor: COLORS.success,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-
-  resultSuccess: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.success,
-    marginBottom: 8,
-  },
-
-  resultSub: {
-    fontSize: 13,
-    color: COLORS.foreground,
-    lineHeight: 18,
-  },
-
-  failedCard: {
-    backgroundColor: '#2e1a1a',
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 14,
-  },
-
-  failedText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: COLORS.accent,
-    marginBottom: 8,
-  },
-
-  failedSub: {
-    fontSize: 13,
-    color: COLORS.foreground,
-    lineHeight: 18,
-  },
+  container: { flex: 1, backgroundColor: COLORS.bg, padding: 20 },
+  header: { marginTop: 40, marginBottom: 20 },
+  title: { fontSize: 18, fontWeight: '800', color: COLORS.primary, letterSpacing: 2 },
+  trackingId: { fontSize: 11, color: COLORS.muted, marginTop: 4, letterSpacing: 1 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyIcon: { fontSize: 40, marginBottom: 12 },
+  emptyText: { color: COLORS.foreground, fontSize: 16, fontWeight: '700' },
+  emptySubText: { color: COLORS.muted, fontSize: 13, textAlign: 'center', marginTop: 8, paddingHorizontal: 30, lineHeight: 18 },
+  errorBanner: { backgroundColor: '#3a1a1a', borderWidth: 1, borderColor: COLORS.accent, borderRadius: 8, padding: 10, marginBottom: 14 },
+  errorBannerText: { color: '#e07070', fontSize: 12 },
+  stepsCard: { backgroundColor: COLORS.card, borderRadius: 12, padding: 16, marginBottom: 14 },
+  stepRow: { alignItems: 'flex-start' },
+  connector: { width: 2, height: 14, backgroundColor: COLORS.border, marginLeft: 11 },
+  connectorDone: { backgroundColor: COLORS.success },
+  stepDotRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dot: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.border, justifyContent: 'center', alignItems: 'center' },
+  dotActive: { backgroundColor: COLORS.primary },
+  dotDone: { backgroundColor: COLORS.success },
+  dotFailed: { backgroundColor: COLORS.accent },
+  dotCheck: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  stepLabel: { fontSize: 13, color: COLORS.muted, flex: 1 },
+  stepLabelActive: { color: COLORS.foreground, fontWeight: '600' },
+  stepLabelDone: { color: COLORS.success },
+  stepLabelPending: { color: COLORS.muted },
+  logsCard: { backgroundColor: COLORS.card, borderRadius: 12, padding: 16, marginBottom: 14 },
+  logsTitle: { fontSize: 11, fontWeight: '700', color: COLORS.muted, letterSpacing: 1, marginBottom: 10 },
+  logLine: { fontSize: 12, color: COLORS.muted, lineHeight: 20 },
+  resultCard: { backgroundColor: '#1a2e1f', borderWidth: 1, borderColor: COLORS.success, borderRadius: 12, padding: 16, marginBottom: 14 },
+  resultSuccess: { fontSize: 16, fontWeight: '800', color: COLORS.success, marginBottom: 8 },
+  resultSub: { fontSize: 13, color: COLORS.foreground, lineHeight: 18 },
+  failedCard: { backgroundColor: '#2e1a1a', borderWidth: 1, borderColor: COLORS.accent, borderRadius: 12, padding: 16, marginBottom: 14 },
+  failedText: { fontSize: 16, fontWeight: '800', color: COLORS.accent, marginBottom: 8 },
+  failedSub: { fontSize: 13, color: COLORS.foreground, lineHeight: 18 },
 });
