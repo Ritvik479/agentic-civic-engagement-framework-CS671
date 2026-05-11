@@ -1,271 +1,435 @@
-# app/orchestrator.py
+"""
+app/orchestrator.py
 
-import asyncio
-from dataclasses import asdict
+smolagents CodeAgent orchestrator for the Agentic Civic Engagement Framework.
+This module is the single entry-point for all complaint-processing runs.
 
-from app.context import ComplaintContext
-from app.db.database import (
-    save_complaint,
-    update_status,
-    insert_log,
-    fetch_complaint,
+Execution flow (high-level):
+  1.  Caller supplies a MediaMetadata object.
+  2.  The CodeAgent receives a natural-language task prompt containing the
+      serialised metadata.
+  3.  The agent writes and executes Python code, calling registered @tool
+      functions in the correct order.
+  4.  A FinalComplaint object is returned (or an error state if any tool fails).
+
+Developer notes:
+  - Drop new tools into `app/tools/<your_pair>/` and register them in
+    TOOL_REGISTRY below.  The agent will discover them automatically.
+  - Never import context.py in new code.  All shared state travels through
+    Pydantic model instances passed between tools.
+  - Set HF_TOKEN (and optionally LITELLM_API_KEY) in your environment before
+    running.  See the README for details.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Optional
+
+# ---------------------------------------------------------------------------
+# smolagents imports
+# ---------------------------------------------------------------------------
+from smolagents import CodeAgent, HfApiModel, LiteLLMModel, tool
+from smolagents.models import MessageRole
+
+# ---------------------------------------------------------------------------
+# Schema imports
+# ---------------------------------------------------------------------------
+from app.schemas.issue_schema import (
+    AuthorityContact,
+    ComplaintStatus,
+    ExtractedIssue,
+    FinalComplaint,
+    IssueCategory,
+    MediaMetadata,
+    MediaType,
+    SeverityLevel,
 )
-from app.tools.pair_d.vision_pipeline_tool  import run_vision_pipeline
-from app.tools.trio_c.authority_lookup_tool import lookup_authority
-from app.tools.trio_c.severity_score_tool   import calculate_severity
-from app.tools.trio_c.complaint_draft_tool  import draft_complaint
-from app.tools.pair_b.submission_agent_tool import submit_complaint
 
-# How often to poll DB for location confirmation (seconds)
-LOCATION_POLL_INTERVAL = 5
-# Maximum time to wait for user to confirm location before giving up (seconds)
-LOCATION_POLL_TIMEOUT  = 600   # 10 minutes
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+)
+logger = logging.getLogger("orchestrator")
 
 
-async def run_agent(
-    video_path:             str,
-    video_url:              str,
-    tracking_id:            str,
-    name:                   str,
-    email:                  str,
-    phone:                  str,
-    user_state:             str,
-    user_district:          str,
-    landmark:               str,
-    user_issue_description: str,
-    user_id:                str,
-):
+# ===========================================================================
+# SECTION 1 — LLM FACTORY
+# ===========================================================================
+# Toggle between HfApiModel (free / HF Inference API) and LiteLLMModel
+# (OpenAI, Anthropic, Gemini, etc.) via the ORCHESTRATOR_LLM env var.
+
+def _build_llm() -> HfApiModel | LiteLLMModel:
     """
-    Full async pipeline: vision → location confirmation (if needed)
-    → authority lookup → severity → complaint draft → submission.
+    Returns the configured LLM backend.
 
-    Called by FastAPI BackgroundTasks — must never raise.
-    All failures are caught, logged, and written to DB as status="failed".
+    Environment variables
+    ─────────────────────
+    ORCHESTRATOR_LLM   : "hf" (default) | "litellm"
+    HF_TOKEN           : Required when ORCHESTRATOR_LLM=hf
+    HF_MODEL_ID        : HF model repo id (default: Qwen/Qwen2.5-72B-Instruct)
+    LITELLM_MODEL      : LiteLLM model string (e.g. "openai/gpt-4o")
+    LITELLM_API_KEY    : API key forwarded to LiteLLM
     """
+    backend = os.getenv("ORCHESTRATOR_LLM", "hf").lower()
 
-    # ── 1. Build initial context ────────────────────────────────────────────
-    user_location = ", ".join(p for p in [landmark, user_district, user_state] if p)
+    if backend == "litellm":
+        model_id = os.getenv("LITELLM_MODEL", "openai/gpt-4o")
+        api_key  = os.getenv("LITELLM_API_KEY")
+        logger.info("LLM backend: LiteLLMModel  model=%s", model_id)
+        return LiteLLMModel(model_id=model_id, api_key=api_key)
 
-    ctx = ComplaintContext(
-        tracking_id             = tracking_id,
-        user_id                 = user_id,
-        video_path              = video_path,
-        video_url               = video_url,
-        name                    = name,
-        email                   = email,
-        phone                   = phone,
-        user_issue_description  = user_issue_description,
-        landmark                = landmark,
-        state                   = user_state,
-        district                = user_district,
-        location_label          = user_location,
+    # Default: HF Inference API
+    model_id = os.getenv("HF_MODEL_ID", "Qwen/Qwen2.5-72B-Instruct")
+    token    = os.getenv("HF_TOKEN")
+    logger.info("LLM backend: HfApiModel  model=%s", model_id)
+    return HfApiModel(model_id=model_id, token=token)
+
+
+# ===========================================================================
+# SECTION 2 — TOOL DEFINITIONS
+# ===========================================================================
+# Each @tool function must:
+#   (a) Accept only JSON-serialisable primitive types OR a JSON *string*
+#       representation of a Pydantic model (smolagents constraint).
+#   (b) Return a JSON string so the CodeAgent can parse/pass it onwards.
+#   (c) Include a thorough docstring — smolagents uses it to decide WHEN and
+#       HOW to call the tool.
+#
+# See the Tool Wrapping Guide in DEVELOPER_README.md for the full pattern.
+
+
+# ---------------------------------------------------------------------------
+# 2a — DUMMY TOOL (reference implementation for Sub-team B / C / D)
+# ---------------------------------------------------------------------------
+
+@tool
+def dummy_vision_tool(media_metadata_json: str) -> str:
+    """
+    DUMMY / REFERENCE IMPLEMENTATION — replace with the real vision tool.
+
+    Accepts a serialised MediaMetadata object, pretends to run a vision model,
+    and returns a serialised ExtractedIssue.
+
+    This tool exists solely so:
+      1. The agent skeleton is runnable end-to-end out of the box.
+      2. Sub-team B has a concrete example of the expected tool signature.
+
+    Args:
+        media_metadata_json: JSON string produced by MediaMetadata.model_dump_json().
+            Must contain at minimum the fields `run_id`, `media_url`, and `media_type`.
+
+    Returns:
+        JSON string of an ExtractedIssue object ready for model_validate_json().
+    """
+    data     = json.loads(media_metadata_json)
+    run_id   = data["run_id"]
+
+    # In production this block would call a vision model API.
+    # Here we return plausible hard-coded values so the pipeline can run.
+    issue = ExtractedIssue(
+        run_id=run_id,
+        category=IssueCategory.SOLID_WASTE,
+        severity=SeverityLevel.HIGH,
+        location_raw="Near Railway Station Rd, Sector 12",
+        location_resolved=None,          # geo-resolution tool fills this later
+        description=(
+            "Large accumulation of mixed solid waste visible on the roadside. "
+            "Includes plastic bags, construction debris, and organic matter. "
+            "Potential vector breeding site."
+        ),
+        detected_objects=["plastic bags", "construction debris", "organic waste"],
+        confidence_score=0.91,
+        vision_model_id="dummy-v0",
     )
 
+    logger.info("[dummy_vision_tool] ExtractedIssue built  run_id=%s", run_id)
+    return issue.model_dump_json()
+
+
+@tool
+def dummy_geo_resolution_tool(extracted_issue_json: str) -> str:
+    """
+    DUMMY / REFERENCE IMPLEMENTATION — replace with the real geo-resolution tool.
+
+    Accepts a serialised ExtractedIssue, resolves `location_raw` to a
+    standardised address string, and returns the updated ExtractedIssue.
+
+    Args:
+        extracted_issue_json: JSON string of an ExtractedIssue.
+            The `location_raw` field is used as the geocoding query.
+
+    Returns:
+        JSON string of the updated ExtractedIssue with `location_resolved` populated.
+    """
+    issue_data = json.loads(extracted_issue_json)
+    # Real implementation: call Google Maps / Nominatim / govt GIS API here.
+    issue_data["location_resolved"] = "Sector 12, Dwarka, New Delhi — 110078"
+
+    # Re-validate through the schema to catch any field drift.
+    updated_issue = ExtractedIssue.model_validate(issue_data)
+    logger.info(
+        "[dummy_geo_resolution_tool] Location resolved  run_id=%s  → %s",
+        issue_data["run_id"],
+        updated_issue.location_resolved,
+    )
+    return updated_issue.model_dump_json()
+
+
+@tool
+def dummy_authority_routing_tool(extracted_issue_json: str) -> str:
+    """
+    DUMMY / REFERENCE IMPLEMENTATION — replace with the real routing tool.
+
+    Looks up the correct government authority for a detected issue category
+    and jurisdiction, and returns an AuthorityContact.
+
+    Args:
+        extracted_issue_json: JSON string of an ExtractedIssue.
+            Uses `category` and `location_resolved` to query the authority database.
+
+    Returns:
+        JSON string of an AuthorityContact object.
+    """
+    issue = ExtractedIssue.model_validate_json(extracted_issue_json)
+
+    # Real implementation: query a database / government API here.
+    contact = AuthorityContact(
+        run_id=issue.run_id,
+        department_name="South Delhi Municipal Corporation — Solid Waste Management",
+        department_code="SDMC-SWM",
+        submission_email="swm.complaints@sdmc.delhi.gov.in",
+        submission_api_url=None,          # not yet available in staging
+        portal_url="https://mcdonline.nic.in/portal",
+        jurisdiction="South Delhi Municipal Zone",
+        escalation_authority="Delhi Pollution Control Committee",
+        sla_days=21,
+    )
+
+    logger.info(
+        "[dummy_authority_routing_tool] Authority resolved  run_id=%s  → %s",
+        issue.run_id,
+        contact.department_code,
+    )
+    return contact.model_dump_json()
+
+
+@tool
+def dummy_complaint_assembly_tool(
+    media_metadata_json: str,
+    extracted_issue_json: str,
+    authority_contact_json: str,
+) -> str:
+    """
+    DUMMY / REFERENCE IMPLEMENTATION — replace with the real complaint assembly tool.
+
+    Merges MediaMetadata, ExtractedIssue, and AuthorityContact into a
+    submission-ready FinalComplaint.
+
+    Args:
+        media_metadata_json: JSON string of the original MediaMetadata.
+        extracted_issue_json: JSON string of the resolved ExtractedIssue.
+        authority_contact_json: JSON string of the AuthorityContact.
+
+    Returns:
+        JSON string of a FinalComplaint with status=VALIDATED.
+    """
+    media     = MediaMetadata.model_validate_json(media_metadata_json)
+    issue     = ExtractedIssue.model_validate_json(extracted_issue_json)
+    authority = AuthorityContact.model_validate_json(authority_contact_json)
+
+    complaint = FinalComplaint(
+        run_id=media.run_id,
+        status=ComplaintStatus.VALIDATED,
+        source_url=str(media.media_url),
+        platform=media.platform,
+        reporter_handle=media.reporter_handle,
+        posted_at=media.posted_at,
+        issue_category=issue.category,
+        severity=issue.severity,
+        issue_location=issue.location_resolved or str(media.geotag or "unknown"),
+        issue_description=issue.description,
+        evidence_urls=[str(media.media_url)],
+        authority_name=authority.department_name,
+        authority_code=authority.department_code,
+        submission_endpoint=authority.submission_email,
+    )
+
+    logger.info(
+        "[dummy_complaint_assembly_tool] FinalComplaint assembled  run_id=%s  status=%s",
+        complaint.run_id,
+        complaint.status,
+    )
+    return complaint.model_dump_json()
+
+
+# ===========================================================================
+# SECTION 3 — TOOL REGISTRY
+# ===========================================================================
+# Register every tool the agent is allowed to call.
+# Sub-teams: add your real tool functions here when they are ready.
+# Import them from app/tools/<your_pair>/<module>.py.
+
+TOOL_REGISTRY = [
+    dummy_vision_tool,
+    dummy_geo_resolution_tool,
+    dummy_authority_routing_tool,
+    dummy_complaint_assembly_tool,
+    # pair_b: from app.tools.pair_b.vision import vision_tool; add vision_tool
+    # pair_d: from app.tools.pair_d.routing import routing_tool; add routing_tool
+    # trio_c: from app.tools.trio_c.assembly import assembly_tool; add assembly_tool
+]
+
+
+# ===========================================================================
+# SECTION 4 — AGENT FACTORY
+# ===========================================================================
+
+def build_agent(extra_tools: Optional[list] = None) -> CodeAgent:
+    """
+    Constructs and returns a configured CodeAgent instance.
+
+    Args:
+        extra_tools: Optional list of additional @tool-decorated functions to
+            register on top of TOOL_REGISTRY.  Useful for integration tests.
+
+    Returns:
+        A ready-to-run smolagents.CodeAgent.
+    """
+    llm   = _build_llm()
+    tools = TOOL_REGISTRY + (extra_tools or [])
+
+    agent = CodeAgent(
+        tools=tools,
+        model=llm,
+        # Allow the agent to import these standard libs in its generated code.
+        additional_authorized_imports=["json", "pydantic", "datetime", "uuid"],
+        # Keep a rolling window of the last N steps for long pipelines.
+        max_steps=15,
+        # Surface intermediate reasoning to the logger (set False in prod).
+        verbosity_level=1,
+    )
+
+    logger.info("CodeAgent built  tools=%d", len(tools))
+    return agent
+
+
+# ===========================================================================
+# SECTION 5 — ORCHESTRATION ENTRY-POINT
+# ===========================================================================
+
+def run_complaint_pipeline(media: MediaMetadata) -> FinalComplaint:
+    """
+    Main entry-point.  Accepts a MediaMetadata object, runs the full agentic
+    pipeline, and returns a FinalComplaint.
+
+    Args:
+        media: Populated MediaMetadata instance representing the social-media
+               post to process.
+
+    Returns:
+        FinalComplaint with status VALIDATED or SUBMITTED (or FAILED on error).
+
+    Raises:
+        ValueError: If the agent returns output that cannot be parsed as a
+                    FinalComplaint.
+    """
+    agent = build_agent()
+
+    # Serialise the input so the agent can embed it in generated code calls.
+    media_json = media.model_dump_json()
+
+    # The task prompt instructs the agent on the expected call sequence.
+    # The CodeAgent will write Python code that calls the registered tools in
+    # the correct order, passing outputs from one tool to the next.
+    task_prompt = f"""
+You are processing a civic media submission for the Agentic Civic Engagement Framework.
+
+Your goal is to produce a FinalComplaint JSON string by calling the tools in this order:
+1. Call `dummy_vision_tool` with the media metadata JSON below to detect the issue.
+2. Call `dummy_geo_resolution_tool` with the ExtractedIssue JSON to resolve the location.
+3. Call `dummy_authority_routing_tool` with the resolved ExtractedIssue JSON to find the authority.
+4. Call `dummy_complaint_assembly_tool` with all three JSON strings to produce the FinalComplaint.
+5. Return ONLY the final JSON string from step 4. Do not add any explanation.
+
+Media metadata JSON (input):
+{media_json}
+
+Remember:
+- Each tool returns a JSON string.  Pass that string directly to the next tool.
+- Do NOT attempt to parse or modify the JSON between tool calls.
+- If any tool raises an exception, stop and return a JSON object with a single key
+  "error" describing what went wrong.
+"""
+
+    logger.info("Starting pipeline  run_id=%s", media.run_id)
+    raw_output: str = agent.run(task_prompt)
+    logger.info("Agent run complete  run_id=%s", media.run_id)
+
+    # ------------------------------------------------------------------
+    # Parse agent output
+    # ------------------------------------------------------------------
     try:
-
-        # ── 2. Vision pipeline (Pair D) ─────────────────────────────────────
-        await _log(tracking_id, "Starting vision analysis...")
-        await update_status(tracking_id, "detecting_issue")
-        ctx.submission_status = "detecting_issue"
-
-        vision_result = await asyncio.to_thread(
-            run_vision_pipeline,
-            video_path    = video_path or None,
-            url           = video_url  or None,
-            user_location = user_location,
-            whatsapp_text = "",
-        )
-
-        ctx.issue_type     = vision_result.get("issue_type", "Unknown")
-        ctx.transcript     = vision_result.get("transcript", "")
-        ctx.state          = vision_result.get("state") or user_state
-        ctx.district       = vision_result.get("district") or user_district
-        ctx.location_label = vision_result.get("location_label") or user_location
-
-        await save_complaint(ctx)
-        await _log(tracking_id, f"Issue detected: {ctx.issue_type} at {ctx.location_label}.")
-
-        # ── 3. Location confirmation gate ───────────────────────────────────
-        if vision_result.get("needs_user_input"):
-            await update_status(tracking_id, "needs_location")
-            await _log(tracking_id, "Location unclear — please confirm your location.")
-
-            confirmed = await _wait_for_location(tracking_id)
-
-            if not confirmed:
-                # Timed out — fall back to user-supplied state/district
-                await _log(
-                    tracking_id,
-                    "Location confirmation timed out — using submitted location as fallback."
-                )
-                # ctx.state and ctx.district already set from user_state/user_district above
-            else:
-                # Re-fetch confirmed location from DB (written by /confirm-location)
-                refreshed = await fetch_complaint(tracking_id)
-                if refreshed:
-                    ctx.state          = refreshed.get("state")          or ctx.state
-                    ctx.district       = refreshed.get("district")        or ctx.district
-                    ctx.landmark       = refreshed.get("landmark")        or ctx.landmark
-                    ctx.location_label = refreshed.get("location_label")  or ctx.location_label
-
-                await _log(tracking_id, f"Location confirmed: {ctx.location_label}.")
-
-        # ── 4. Authority lookup ─────────────────────────────────────────────
-        await update_status(tracking_id, "mapping_authority")
-        ctx.submission_status = "mapping_authority"
-        await _log(tracking_id, "Mapping to relevant authority...")
-
-        authority = lookup_authority(
-            issue    = ctx.issue_type,
-            state    = ctx.state,
-            district = ctx.district,
-            severity = ctx.severity or 2,   # severity not yet scored — use default
-        )
-
-        ctx.authority_name      = authority.get("authority_name", "")
-        ctx.authority_email     = authority.get("authority_email", "")
-        ctx.authority_portal    = authority.get("authority_portal", "")
-        ctx.authority_phone     = authority.get("authority_phone", "")
-        ctx.authority_level     = authority.get("current_level", "level1")
-        ctx.authority_level_num = authority.get("current_level_num", 1)
-
-        await save_complaint(ctx)
-        await _log(tracking_id, f"Authority mapped: {ctx.authority_name}.")
-
-        # ── 5. Severity scoring ─────────────────────────────────────────────
-        await _log(tracking_id, "Scoring complaint severity...")
-
-        description = _build_description(ctx)
-        severity_result = await asyncio.to_thread(
-            calculate_severity,
-            issue       = ctx.issue_type,
-            description = description,
-            location    = ctx.location_label,
-        )
-
-        ctx.severity = severity_result.get("severity", 2)
-        if not severity_result.get("success"):
-            await _log(tracking_id, "Severity scoring failed — defaulting to 2.")
-        else:
-            await _log(tracking_id, f"Severity scored: {ctx.severity}/5.")
-
-        # Re-run authority lookup now that we have real severity
-        # (severity affects which level authority is assigned)
-        authority = lookup_authority(
-            issue    = ctx.issue_type,
-            state    = ctx.state,
-            district = ctx.district,
-            severity = ctx.severity,
-        )
-        ctx.authority_name      = authority.get("authority_name", "")
-        ctx.authority_email     = authority.get("authority_email", "")
-        ctx.authority_portal    = authority.get("authority_portal", "")
-        ctx.authority_phone     = authority.get("authority_phone", "")
-        ctx.authority_level     = authority.get("current_level", "level1")
-        ctx.authority_level_num = authority.get("current_level_num", 1)
-
-        await save_complaint(ctx)
-        await _log(tracking_id, f"Authority confirmed post-severity: {ctx.authority_name}.")
-
-        # ── 6. Complaint drafting ───────────────────────────────────────────
-        await update_status(tracking_id, "drafting_complaint")
-        ctx.submission_status = "drafting_complaint"
-        await _log(tracking_id, "Drafting formal complaint...")
-
-        complaint_text = await asyncio.to_thread(
-            draft_complaint,
-            issue       = ctx.issue_type,
-            description = description,
-            location    = ctx.location_label,
-        )
-
-        if complaint_text.startswith("Failed") or complaint_text.startswith("Unable"):
-            await _log(tracking_id, f"Complaint draft issue: {complaint_text}")
-            # Non-fatal — proceed with whatever text was returned
-            # The sentinel strings are still valid fallback complaint text
-
-        ctx.complaint_text = complaint_text
-        await save_complaint(ctx)
-        await _log(tracking_id, "Complaint drafted.")
-
-        # ── 7. Multi-channel submission (Pair B) ────────────────────────────
-        await update_status(tracking_id, "submitting")
-        ctx.submission_status = "drafting_complaint"
-        await _log(tracking_id, "Submitting complaint via portal, email, and WhatsApp...")
-
-        submission = await asyncio.to_thread(submit_complaint, asdict(ctx))
-
-        ctx.submission_status     = submission.get("submission_status", "failed")
-        ctx.submission_screenshot = submission.get("submission_screenshot", "")
-        ctx.complaint_ref_id      = submission.get("complaint_ref_id", "")
-
-        await save_complaint(ctx)
-        await update_status(tracking_id, ctx.submission_status)
-
-        if submission.get("success"):
-            await _log(
-                tracking_id,
-                f"Complaint submitted successfully. "
-                f"Ref: {ctx.complaint_ref_id}. "
-                f"Status: {ctx.submission_status}."
-            )
-        else:
-            await _log(
-                tracking_id,
-                f"Submission completed with status: {ctx.submission_status}. "
-                f"Error: {submission.get('error', '')}."
-            )
-
-    except Exception as e:
-        # Catch-all — pipeline must never crash silently
-        import traceback
-        traceback.print_exc()
-        ctx.error = str(e)
-        ctx.submission_status = "failed"
+        complaint = FinalComplaint.model_validate_json(raw_output)
+    except Exception as parse_error:
+        # Attempt to detect error passthrough from the agent.
         try:
-            await save_complaint(ctx)
-            await update_status(tracking_id, "failed")
-            await _log(tracking_id, f"Pipeline failed: {e}")
-        except Exception as inner:
-            print(f"[Orchestrator] CRITICAL: could not write failure to DB: {inner}")
+            error_payload = json.loads(raw_output)
+            error_msg = error_payload.get("error", str(raw_output))
+        except Exception:
+            error_msg = str(raw_output)
+
+        logger.error("Pipeline failed  run_id=%s  error=%s", media.run_id, error_msg)
+
+        # Return a FAILED complaint so callers always receive a FinalComplaint.
+        complaint = FinalComplaint(
+            run_id=media.run_id,
+            status=ComplaintStatus.FAILED,
+            source_url=str(media.media_url),
+            platform=media.platform,
+            posted_at=media.posted_at,
+            issue_category=IssueCategory.UNKNOWN,
+            severity=SeverityLevel.LOW,
+            issue_location="unresolved",
+            issue_description="Pipeline failed — see validation_errors for details.",
+            authority_name="unresolved",
+            authority_code="unresolved",
+            validation_errors=[f"Agent output parse error: {error_msg}"],
+        )
+
+    return complaint
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# SECTION 6 — CLI SMOKE-TEST
+# ===========================================================================
 
-async def _wait_for_location(tracking_id: str) -> bool:
+if __name__ == "__main__":
     """
-    Polls DB until /confirm-location flips status to 'authority_mapped',
-    or until LOCATION_POLL_TIMEOUT seconds elapse.
-    Returns True if confirmed, False if timed out.
+    Quick smoke-test.  Run with:
+        python -m app.orchestrator
+    or
+        HF_TOKEN=hf_xxx python app/orchestrator.py
     """
-    elapsed = 0
-    while elapsed < LOCATION_POLL_TIMEOUT:
-        await asyncio.sleep(LOCATION_POLL_INTERVAL)
-        elapsed += LOCATION_POLL_INTERVAL
-        row = await fetch_complaint(tracking_id)
-        if row and row.get("submission_status") == "authority_mapped":
-            return True
-    return False
+    sample_media = MediaMetadata(
+        media_url="https://example.com/sample_waste_image.jpg",  # type: ignore[arg-type]
+        media_type=MediaType.IMAGE,
+        platform="twitter",
+        posted_at=datetime(2024, 11, 14, 10, 30, 0, tzinfo=timezone.utc),
+        reporter_handle="@concerned_citizen",
+        geotag="Dwarka Sector 12, New Delhi",
+        caption="Look at this garbage dump near the railway station! #SwachhBharat",
+    )
 
+    result = run_complaint_pipeline(sample_media)
 
-async def _log(tracking_id: str, message: str):
-    """Thin wrapper — keeps pipeline body readable."""
-    print(f"[Orchestrator:{tracking_id}] {message}")
-    await insert_log(tracking_id, message)
-
-
-def _build_description(ctx: ComplaintContext) -> str:
-    """
-    Assembles the best available description for severity scoring and
-    complaint drafting from transcript and user-supplied text.
-    Transcript is preferred — it's richer. User description appended
-    as supplementary context if present.
-    """
-    parts = []
-    if ctx.transcript:
-        parts.append(ctx.transcript)
-    if ctx.user_issue_description:
-        parts.append(f"Additional context: {ctx.user_issue_description}")
-    return " ".join(parts) or ctx.issue_type
+    print("\n" + "=" * 60)
+    print("PIPELINE RESULT")
+    print("=" * 60)
+    print(result.model_dump_json(indent=2))
