@@ -52,9 +52,14 @@ import datetime
 import urllib.request
 import urllib.error
 import traceback
-from dataclasses import asdict
+from uuid import UUID
 
-from app.context import ComplaintContext
+from app.schemas.issue_schema import (
+    FinalComplaint,
+    IssueCategory,
+    SeverityLevel,
+    ComplaintStatus,
+)
 from app.db.database import (
     fetch_slim_complaints,
     fetch_complaint,
@@ -117,6 +122,19 @@ ESCALATION_LADDER: dict[int, tuple[int, str]] = {
     1: (2, "escalated_l2"),
     2: (3, "escalated_l3"),
     3: (4, "escalated_l4"),
+}
+
+# ---------------------------------------------------------------------------
+# Severity int → SeverityLevel enum
+# ---------------------------------------------------------------------------
+
+_INT_TO_SEVERITY: dict[int, SeverityLevel] = {
+    0: SeverityLevel.LOW,
+    1: SeverityLevel.LOW,
+    2: SeverityLevel.MEDIUM,
+    3: SeverityLevel.HIGH,
+    4: SeverityLevel.CRITICAL,
+    5: SeverityLevel.CRITICAL,
 }
 
 # ---------------------------------------------------------------------------
@@ -226,7 +244,7 @@ async def _process_complaint(tracking_id: str, slim: dict, summary: dict):
 
     # ── SLA breached — escalate ──────────────────────────────────────────────
     print(f"[EscalationEngine] {tracking_id}: SLA BREACHED — escalating...")
-    _escalate(complaint_full, status, summary)
+    await _escalate(complaint_full, status, summary)
 
 
 async def _escalate(complaint: dict, current_status: str, summary: dict):
@@ -268,29 +286,31 @@ async def _escalate(complaint: dict, current_status: str, summary: dict):
     print(f"[EscalationEngine] {tracking_id}: {log_msg}")
 
     # ── Update DB with new authority before re-submission ────────────────────
-    await save_complaint(ctx)           # persist new authority first
+    await save_complaint(ctx.model_dump())      # persist new authority first
     await update_status(tracking_id, "submitting")  # then flip status
 
     # ── Re-submit via submission_agent ───────────────────────────────────────
-    result = submit_complaint(asdict(ctx))
+    result = submit_complaint(ctx.model_dump())
 
     new_status = next_status if result["success"] else "failed"
 
     # Persist result back to DB
-    ctx.submission_status     = new_status
-    ctx.submission_screenshot = result.get("submission_screenshot", "")
+    ctx = ctx.model_copy(update={
+        "status": ComplaintStatus.SUBMITTED if result["success"] else ComplaintStatus.FAILED,
+        "submission_endpoint": result.get("submission_screenshot", ctx.submission_endpoint),
+    })
     if result.get("complaint_ref_id"):
-        ctx.complaint_ref_id = result["complaint_ref_id"]
+        ctx = ctx.model_copy(update={"complaint_id": result["complaint_ref_id"]})
 
-    asyncio.run(save_complaint(ctx))
-    asyncio.run(update_status(tracking_id, new_status))
+    await save_complaint(ctx.model_dump())
+    await update_status(tracking_id, new_status)
 
     outcome_msg = (
         f"Escalation to level {next_level_num} "
         f"({'succeeded' if result['success'] else 'failed'}). "
         f"New status: {new_status}."
     )
-    asyncio.run(insert_log(tracking_id, outcome_msg))
+    await insert_log(tracking_id, outcome_msg)
     print(f"[EscalationEngine] {tracking_id}: {outcome_msg}")
 
     if result["success"]:
@@ -396,42 +416,80 @@ def _build_context(
     complaint: dict,
     next_authority: dict,
     level_key: str,
-    level_num: int
-) -> ComplaintContext:
+    level_num: int,
+) -> FinalComplaint:
     """
-    Reconstructs a ComplaintContext from the DB complaint dict,
+    Constructs a FinalComplaint from the DB complaint dict,
     updated with the next authority's details.
+
+    Field mapping from old ComplaintContext:
+        tracking_id    → run_id          (str cast to UUID)
+        authority_name → authority_name
+        authority_email→ submission_endpoint
+        complaint_text → issue_description
+        issue_type     → issue_category  (IssueCategory enum)
+        severity (int) → severity        (SeverityLevel enum)
+        authority_level→ status          (ComplaintStatus enum)
     """
-    # Clamp severity to valid range before constructing
-    severity = complaint.get("severity") or 1
-    severity = max(0, min(int(severity), 5))
+    # Clamp severity to valid range
+    severity_int = complaint.get("severity") or 1
+    severity_int = max(0, min(int(severity_int), 5))
+    severity_enum = _INT_TO_SEVERITY.get(severity_int, SeverityLevel.MEDIUM)
 
-    ctx = ComplaintContext(
-        tracking_id    = complaint["tracking_id"],
-        user_id        = complaint.get("user_id", ""),
-        video_path     = complaint.get("video_path", ""),
+    # Map issue_type string → IssueCategory enum, falling back to UNKNOWN
+    raw_issue_type = (complaint.get("issue_type") or "unknown").strip().lower()
+    try:
+        issue_category = IssueCategory(raw_issue_type)
+    except ValueError:
+        issue_category = IssueCategory.UNKNOWN
 
-        issue_type     = complaint.get("issue_type", ""),
-        state          = complaint.get("state", ""),
-        district       = complaint.get("district", ""),
-        location_label = complaint.get("location_label", ""),
-        severity       = severity,
-        transcript     = complaint.get("transcript", ""),
+    # tracking_id is a plain string in the DB; run_id is a UUID in the schema
+    tracking_id_str = complaint.get("tracking_id", "")
+    try:
+        run_id = UUID(tracking_id_str)
+    except (ValueError, AttributeError):
+        # If the string isn't a valid UUID (legacy data), generate a deterministic
+        # one by zero-padding — keeps traceability without crashing.
+        import uuid
+        run_id = uuid.uuid5(uuid.NAMESPACE_DNS, tracking_id_str)
 
-        complaint_text = complaint.get("complaint_text", ""),
+    # authority_level string ("level1", "level2", …) → ComplaintStatus
+    # During escalation the complaint is being re-submitted, so SUBMITTED is
+    # the appropriate terminal status; DRAFT signals it hasn't been sent yet.
+    authority_level = complaint.get("authority_level", "")
+    if authority_level in ("level2", "level3", "level4"):
+        complaint_status = ComplaintStatus.SUBMITTED
+    else:
+        complaint_status = ComplaintStatus.DRAFT
 
-        # Updated to next-level authority
-        authority_name     = next_authority.get("authority", ""),
-        authority_email    = next_authority.get("email", ""),
-        authority_portal   = next_authority.get("portal", ""),
-        authority_phone    = next_authority.get("phone", ""),
-        authority_level    = level_key,
-        authority_level_num= level_num,
+    return FinalComplaint(
+        run_id=run_id,
+        status=complaint_status,
 
-        # Carry over existing submission artefacts
-        submission_status     = "submitting",
-        submission_screenshot = complaint.get("submission_screenshot", ""),
-        complaint_ref_id = "",
+        # Source information — carry over from DB record
+        source_url=complaint.get("video_path", ""),
+        platform=complaint.get("platform", ""),
+        reporter_handle=complaint.get("user_id") or None,
+        posted_at=datetime.datetime.now(datetime.timezone.utc),  # best available
+
+        # Issue fields
+        issue_category=issue_category,
+        severity=severity_enum,
+        issue_location=(
+            complaint.get("location_label")
+            or complaint.get("district")
+            or "Location not determined"
+        ),
+        issue_description=complaint.get("complaint_text", ""),
+
+        # Evidence
+        evidence_urls=[complaint.get("video_path", "")] if complaint.get("video_path") else [],
+
+        # Next-level authority fields
+        authority_name=next_authority.get("authority", ""),
+        authority_code=next_authority.get("code", f"L{level_num}-UNKNOWN"),
+        submission_endpoint=next_authority.get("email", "") or next_authority.get("portal", ""),
+
+        # Submission tracking — carry over existing ref if present
+        complaint_id=complaint.get("complaint_ref_id") or None,
     )
-
-    return ctx
