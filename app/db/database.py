@@ -64,6 +64,7 @@ async def init_db():
                 submission_screenshot TEXT,
                 complaint_ref_id TEXT,            -- ADD
                 authority_phone TEXT,             -- ADD
+                authority_code TEXT,              -- ADD
 
                 error TEXT
             )
@@ -198,6 +199,44 @@ async def fetch_logs(tracking_id: str) -> list[str]:
 
         rows = await cursor.fetchall()
         return [row["message"] for row in rows]
+    finally:
+        await conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Update full complaint record from FinalComplaint (pipeline terminal state)
+# ---------------------------------------------------------------------------
+async def save_complaint_record(tracking_id: str, complaint: "FinalComplaint"):
+    conn = await aiosqlite.connect(DB_PATH)
+    try:
+        await conn.execute("""
+            UPDATE complaints SET
+                issue_type              = ?,
+                severity                = ?,
+                location_label          = ?,
+                complaint_text          = ?,
+                authority_name          = ?,
+                authority_code          = ?,
+                authority_portal        = ?,
+                authority_email         = ?,
+                submission_status       = ?,
+                complaint_ref_id        = ?,
+                updated_at              = CURRENT_TIMESTAMP
+            WHERE tracking_id = ?
+        """, (
+            complaint.issue_category.value,
+            complaint.severity,
+            complaint.issue_location,
+            complaint.issue_description,
+            complaint.authority_name,
+            complaint.authority_code,
+            complaint.authority_portal,
+            complaint.submission_endpoint,
+            complaint.status.value,
+            complaint.complaint_id or "",
+            tracking_id
+        ))
+        await conn.commit()
     finally:
         await conn.close()
 

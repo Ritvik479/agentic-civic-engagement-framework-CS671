@@ -24,14 +24,23 @@ Output:
 """
 
 import json
+import os
 
 from groq import Groq
+from openai import OpenAI
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
 import re
 
-# ── Groq client ───────────────────────────────────────────────────────────────
+# ── Groq client (Vision) ──────────────────────────────────────────────────────
 client     = Groq()  # reads GROQ_API_KEY from environment
+
+# ── NVIDIA client (Text) ──────────────────────────────────────────────────────
+nvidia_client = OpenAI(
+    base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
+
 geolocator = Nominatim(user_agent="civic_complaint_agent")
 
 # ── Signal weights ────────────────────────────────────────────────────────────
@@ -92,7 +101,7 @@ def _vision_location(frame_b64: str, social_caption: str = '') -> dict:
                  'image_url': {'url': f'data:image/jpeg;base64,{frame_b64}'}},
                 {'type': 'text', 'text': prompt},
             ]}],
-            max_tokens=200,
+            max_tokens=1024,
         )
         raw = response.choices[0].message.content.strip()
         # FIX
@@ -113,19 +122,19 @@ def _vision_location(frame_b64: str, social_caption: str = '') -> dict:
 
 def _transcript_location(transcript: str) -> dict:
     """
-    Groq text LLM — extracts location from English transcript.
+    NVIDIA text LLM — extracts location from English transcript.
     Primary speech signal (0.60). Speech is explicit; always wins over vision.
     """
     if not transcript or not transcript.strip():
         return {'location': '', 'confidence': 0.0, 'reasoning': 'no transcript'}
 
     try:
-        response = client.chat.completions.create(
-            model='llama-3.3-70b-versatile',
+        response = nvidia_client.chat.completions.create(
+            model=os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct"),
             messages=[{'role': 'user', 'content':
                 _TRANSCRIPT_LOCATION_PROMPT.format(transcript=transcript[:1500])
             }],
-            max_tokens=150,
+            max_tokens=1024,
         )
         raw    = response.choices[0].message.content.strip()
         match = re.search(r'\{.*\}', raw, re.DOTALL)

@@ -64,7 +64,7 @@ from app.db.database import (
     fetch_complaint,
     update_status,
     insert_log,
-    save_complaint,
+    save_complaint_record,
 )
 from app.tools.pair_b.submission_agent_tool import submit_complaint
 
@@ -273,7 +273,7 @@ async def _escalate(complaint: dict, current_status: str, summary: dict):
     print(f"[EscalationEngine] {tracking_id}: {log_msg}")
 
     # ── Update DB with new authority before re-submission ────────────────────
-    await save_complaint(ctx.model_dump())      # persist new authority first
+    await save_complaint_record(tracking_id, ctx)      # persist new authority first
     await update_status(tracking_id, "submitting")  # then flip status
 
     # ── Re-submit via submission_agent ───────────────────────────────────────
@@ -289,7 +289,7 @@ async def _escalate(complaint: dict, current_status: str, summary: dict):
     if result.get("complaint_ref_id"):
         ctx = ctx.model_copy(update={"complaint_id": result["complaint_ref_id"]})
 
-    await save_complaint(ctx.model_dump())
+    await save_complaint_record(tracking_id, ctx)
     await update_status(tracking_id, new_status)
 
     outcome_msg = (

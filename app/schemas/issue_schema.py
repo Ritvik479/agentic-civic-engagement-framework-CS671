@@ -372,6 +372,11 @@ class FinalComplaint(BaseModel):
         description="Short department code used in API payloads.",
     )
 
+    authority_portal: Optional[str] = Field(
+        default=None,
+        description="Public citizen-facing portal URL for the authority.",
+    )
+
     submission_endpoint: Optional[str] = Field(
         default=None,
         description="API URL or email used for submission.",

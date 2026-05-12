@@ -25,7 +25,8 @@ from app.db.database import (
     create_pending_complaint,
     insert_log,
     update_status,
-    update_location          # new — see database.py
+    update_location,
+    save_complaint_record
 )
 from app.schemas.issue_schema import MediaMetadata, MediaType
 from app.schemas.requests import ConfirmLocationRequest
@@ -75,7 +76,9 @@ async def _run_pipeline_background(
     )
 
     try:
-        complaint = await run_complaint_pipeline(media)
+        complaint = run_complaint_pipeline(media)
+        # SAVE THE RECORD - Fixes bug where pipeline result was lost
+        await save_complaint_record(tracking_id, complaint)
         await update_status(tracking_id, complaint.status.value)
         await insert_log(
             tracking_id,
@@ -139,11 +142,9 @@ async def process_video(
     # Write video to disk in chunks — avoids loading full file into RAM
     # FIX: was await video.read() which reads entire file into memory at once
     # -----------------------------------------------------------------------
-    filename = f"{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-
     abs_path = ""
     if video:
+        # ext is guaranteed to be defined here due to the 'if video' block above
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(UPLOAD_DIR, filename)
         total_bytes = 0

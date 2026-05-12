@@ -63,5 +63,10 @@ ultralytics==8.4.38
 ultralytics-thop==2.0.18
 urllib3==2.6.3
 uvicorn==0.44.0
-whisper==1.1.10
+openai-whisper
+sentence-transformers
 yt-dlp==2026.3.17
+apscheduler
+aiosqlite
+litellm
+python-multipart

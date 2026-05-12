@@ -44,7 +44,11 @@ def _is_blank(value: str | None) -> bool:
 def _looks_like_url(value: str | None) -> bool:
     if _is_blank(value):
         return False
-    return bool(_URL_RE.match(value.strip()))
+    val = value.strip()
+    # Support file:// URLs for local development/app uploads
+    if val.lower().startswith("file://"):
+        return True
+    return bool(_URL_RE.match(val))
 
 
 def _is_future_timestamp(dt: datetime | None) -> bool:
@@ -149,7 +153,7 @@ def validate_final_complaint(obj: "FinalComplaint") -> list[str]:
     if _is_blank(obj.source_url):
         errors.append("source_url: must not be blank.")
     elif not _looks_like_url(obj.source_url):
-        errors.append(f"source_url: '{obj.source_url}' does not look like a valid HTTP(S) URL.")
+        errors.append(f"source_url: '{obj.source_url}' is not a valid URL (expected http, https, or file).")
 
     for i, url in enumerate(obj.evidence_urls):
         if not _looks_like_url(url):

@@ -1,15 +1,13 @@
 from dotenv import load_dotenv
 import os
-from groq import Groq
+from openai import OpenAI
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY")
-
-if not api_key:
-    raise ValueError("GROQ_API_KEY not found in environment variables")
-
-client = Groq(api_key=api_key)
+nvidia_client = OpenAI(
+    base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
 
 
 def calculate_severity(issue: str, description: str, location: str) -> dict:
@@ -49,8 +47,8 @@ Nothing else.
 """
 
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+        response = nvidia_client.chat.completions.create(
+            model=os.getenv("NVIDIA_MODEL", "nvidia/llama-3.1-nemotron-70b-instruct"),
             messages=[
                 {
                     "role": "system",
@@ -64,7 +62,8 @@ Nothing else.
                     "content": prompt
                 }
             ],
-            temperature=0.1
+            temperature=0.1,
+            max_tokens=1024
         )
 
         raw_output = response.choices[0].message.content.strip()

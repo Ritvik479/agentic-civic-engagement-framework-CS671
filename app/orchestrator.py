@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from smolagents import CodeAgent, InferenceClientModel, LiteLLMModel, tool
+from smolagents import ToolCallingAgent, InferenceClientModel, LiteLLMModel, tool
 from smolagents.models import MessageRole
 
 from app.schemas.issue_schema import (
@@ -27,6 +27,7 @@ from app.schemas.issue_schema import (
 
 # New imports for tools and validators
 from app.tools.pair_d.vision_tool_wrapped import vision_tool
+from app.tools.trio_c.routing_tool_wrapped import route_to_authority
 from app.tools.trio_c.complaint_assembly_tool_wrapped import complaint_assembly_tool
 from app.tools.pair_b.submission_tool_wrapped import submission_tool
 from app.validators import validate_final_complaint
@@ -43,7 +44,8 @@ def _build_llm() -> InferenceClientModel | LiteLLMModel: # Update return type hi
     if backend == "litellm":
         model_id = os.getenv("LITELLM_MODEL", "openai/gpt-4o")
         api_key  = os.getenv("LITELLM_API_KEY")
-        return LiteLLMModel(model_id=model_id, api_key=api_key)
+        base_url = os.getenv("LITELLM_BASE_URL")
+        return LiteLLMModel(model_id=model_id, api_key=api_key, base_url=base_url)
     
     # Update HfApiModel to InferenceClientModel
     model_id = os.getenv("HF_MODEL_ID", "Qwen/Qwen2.5-72B-Instruct")
@@ -51,129 +53,21 @@ def _build_llm() -> InferenceClientModel | LiteLLMModel: # Update return type hi
     return InferenceClientModel(model_id=model_id, token=token)
 
 
-@tool
-def dummy_vision_tool(media_metadata_json: str) -> str:
-    """
-    DUMMY implementation to demonstrate the vision extraction step.
-
-    Args:
-        media_metadata_json: A JSON string containing the MediaMetadata object.
-    """
-    data     = json.loads(media_metadata_json)
-    run_id   = data["run_id"]
-
-    issue = ExtractedIssue(
-        run_id=run_id,
-        category=IssueCategory.SOLID_WASTE,
-        severity=3,
-        location_raw="Near Railway Station Rd, Sector 12",
-        location_resolved=None,
-        description="Large accumulation of mixed solid waste visible on the roadside.",
-        detected_objects=["plastic bags", "construction debris", "organic waste"],
-        confidence_score=0.91,
-        vision_model_id="dummy-v0",
-    )
-
-    logger.info("[dummy_vision_tool] ExtractedIssue built  run_id=%s", run_id)
-    return issue.model_dump_json()
-
-
-@tool
-def dummy_geo_resolution_tool(extracted_issue_json: str) -> str:
-    """
-    DUMMY implementation to demonstrate geographic resolution.
-
-    Args:
-        extracted_issue_json: A JSON string containing the ExtractedIssue object.
-    """
-    issue_data = json.loads(extracted_issue_json)
-    issue_data["location_resolved"] = "Sector 12, Dwarka, New Delhi — 110078"
-    updated_issue = ExtractedIssue.model_validate(issue_data)
-    return updated_issue.model_dump_json()
-
-
-@tool
-def dummy_authority_routing_tool(extracted_issue_json: str) -> str:
-    """
-    DUMMY implementation to demonstrate authority lookup.
-
-    Args:
-        extracted_issue_json: A JSON string containing the ExtractedIssue object.
-    """
-    issue = ExtractedIssue.model_validate_json(extracted_issue_json)
-    contact = AuthorityContact(
-        run_id=issue.run_id,
-        department_name="South Delhi Municipal Corporation — Solid Waste Management",
-        department_code="SDMC-SWM",
-        submission_email="swm.complaints@sdmc.delhi.gov.in",
-        submission_api_url=None,
-        portal_url="https://mcdonline.nic.in/portal",
-        jurisdiction="South Delhi Municipal Zone",
-        escalation_authority="Delhi Pollution Control Committee",
-        sla_days=21,
-    )
-    return contact.model_dump_json()
-
-
-@tool
-def dummy_complaint_assembly_tool(
-    media_metadata_json: str,
-    extracted_issue_json: str,
-    authority_contact_json: str,
-) -> str:
-    """
-    DUMMY implementation to demonstrate the final complaint drafting.
-
-    Args:
-        media_metadata_json: JSON string of the MediaMetadata.
-        extracted_issue_json: JSON string of the ExtractedIssue.
-        authority_contact_json: JSON string of the AuthorityContact.
-    """
-    media     = MediaMetadata.model_validate_json(media_metadata_json)
-    issue     = ExtractedIssue.model_validate_json(extracted_issue_json)
-    authority = AuthorityContact.model_validate_json(authority_contact_json)
-
-    complaint = FinalComplaint(
-        run_id=media.run_id,
-        status=ComplaintStatus.VALIDATED,
-        source_url=str(media.media_url),
-        platform=media.platform,
-        reporter_handle=media.reporter_handle,
-        posted_at=media.posted_at,
-        issue_category=issue.category,
-        severity=issue.severity,
-        issue_location=issue.location_resolved or str(media.geotag or "unknown"),
-        issue_description=issue.description,
-        evidence_urls=[str(media.media_url)],
-        authority_name=authority.department_name,
-        authority_code=authority.department_code,
-        submission_endpoint=authority.submission_email,
-    )
-    return complaint.model_dump_json()
-
-
 TOOL_REGISTRY = [
     vision_tool,
+    route_to_authority,
     complaint_assembly_tool,
     submission_tool,
-    # dummy_vision_tool,  # replaced by vision_tool
-    # dummy_geo_resolution_tool,
-    # dummy_authority_routing_tool,
-    # dummy_complaint_assembly_tool, # replaced by complaint_assembly_tool
 ]
 
 
-def build_agent(extra_tools: Optional[list] = None) -> CodeAgent:
+def build_agent(extra_tools: Optional[list] = None) -> ToolCallingAgent:
     llm   = _build_llm()
     tools = TOOL_REGISTRY + (extra_tools or [])
-    agent = CodeAgent(
+    agent = ToolCallingAgent(
         tools=tools,
         model=llm,
-        additional_authorized_imports=[
-            "json", "pydantic", "datetime", "uuid", "os", "re", 
-            "groq", "geopy", "cv2", "ultralytics", "sentence_transformers", "numpy"
-        ],
-        max_steps=15,
+        max_steps=10, 
         verbosity_level=1,
     )
     return agent
@@ -181,30 +75,50 @@ def build_agent(extra_tools: Optional[list] = None) -> CodeAgent:
 
 def run_complaint_pipeline(media: MediaMetadata) -> FinalComplaint:
     agent = build_agent()
-    media_json = media.model_dump_json()
     
-    task_prompt = f"""
-    You are processing a civic media submission for the Agentic Civic Engagement Framework.
+    # ── Step 0: Prep simplified inputs for the agent ──
+    # We pass individual fields to make it easy for the agent to call tools
+    # without having to manage complex JSON strings manually.
+    initial_args = {
+        "run_id":    str(media.run_id),
+        "media_url": str(media.media_url),
+        "geotag":    media.geotag or "",
+        "caption":   media.caption or "",
+        "platform":  media.platform,
+        "posted_at": media.posted_at.isoformat(),
+    }
     
-    Your goal is to produce a FinalComplaint JSON string using the available tools.
-    
-    Rules:
-    - Always resolve the location before routing to an authority.
-    - Always route to an authority before assembling the complaint.
-    - Pass each tool's JSON output directly as input to the next tool — do not 
-      parse or modify JSON between tool calls.
-    - If any tool returns a JSON object with an "error" key, stop immediately and 
-      return that JSON string as your final output.
-    - Return ONLY the final FinalComplaint JSON string. No explanation.
-    
-    Media metadata (your starting input):
-    {media_json}
-    """
+    task_prompt = f"""Process the civic report for Run ID: {initial_args['run_id']}.
+
+IMPORTANT: You MUST use strictly valid JSON for tool calls. Use DOUBLE QUOTES (") for all keys and string values. Single quotes (') are NOT allowed in the JSON structure.
+
+Follow these steps strictly:
+1. Call 'vision_tool' using 'run_id', 'media_url', 'geotag', and 'caption' from the provided variables. It returns a JSON string with issue details.
+2. Parse the JSON from 'vision_tool' to get 'category', 'location_resolved', 'description', and 'severity'.
+3. Call 'route_to_authority' using 'run_id', 'category', 'location_resolved', and 'severity' to find the government department. It returns a JSON string with authority details.
+4. Parse the JSON from 'route_to_authority' to get 'department_name', 'department_code', 'portal_url', and 'submission_email'.
+5. Call 'complaint_assembly_tool' to draft the formal text and create the complaint object. Pass all required fields collected so far.
+6. Finally, call 'submission_tool' with the assembled complaint details to submit it.
+7. Return the final JSON from 'submission_tool' as your final answer. You MUST provide the full JSON object, not a text summary."""
     
     logger.info("Starting pipeline  run_id=%s", media.run_id)
-    raw_output: str = agent.run(task_prompt)
+    raw_output: str = agent.run(task_prompt, additional_args=initial_args)
 
     try:
+        # Check if the agent returned an error JSON or a plain string instead of FinalComplaint
+        try:
+            parsed = json.loads(raw_output)
+            if isinstance(parsed, dict) and "error" in parsed:
+                raise ValueError(f"Agent reported error: {parsed['error']}")
+            if isinstance(parsed, dict) and "answer" in parsed:
+                # Agent used final_answer with a string — try to find the last tool output
+                # Or just treat the raw_output as the source for model_validate if it looks like JSON
+                pass
+        except json.JSONDecodeError:
+            pass 
+
+        # Robustness: If raw_output is not valid JSON but the pipeline actually finished,
+        # we try to reconstruct a successful object or report the parsing error.
         complaint = FinalComplaint.model_validate_json(raw_output)
         
         # Wire validators
@@ -215,6 +129,7 @@ def run_complaint_pipeline(media: MediaMetadata) -> FinalComplaint:
                 complaint.status = ComplaintStatus.FAILED
                 
     except Exception as parse_error:
+        logger.error("Pipeline parsing failed: %s", parse_error)
         complaint = FinalComplaint(
             run_id=media.run_id,
             status=ComplaintStatus.FAILED,
@@ -227,6 +142,6 @@ def run_complaint_pipeline(media: MediaMetadata) -> FinalComplaint:
             issue_description="Pipeline failed — see validation_errors for details.",
             authority_name="unresolved",
             authority_code="unresolved",
-            validation_errors=[f"Agent output parse error: {str(raw_output)}"],
+            validation_errors=[f"Agent output parse error: {str(parse_error)}", f"Raw output: {str(raw_output)}"],
         )
     return complaint

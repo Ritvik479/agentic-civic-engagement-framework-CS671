@@ -88,9 +88,10 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
 
     return {
         "authority_name":     authority.get("authority", ""),
-        "authority_email":    authority.get("email", ""),
-        "authority_portal":   authority.get("portal", ""),
-        "authority_phone":    authority.get("phone", ""),   # ADD
+        "authority_email":     authority.get("email", ""),
+        "authority_portal":    authority.get("portal") if authority.get("portal") else None,
+        "authority_phone":    authority.get("phone", ""),
+
         "current_level":      selected_level,
         "current_level_num":  level_num
     }

@@ -18,13 +18,20 @@ import json
 import base64
 
 from groq import Groq
+from openai import OpenAI
 from ultralytics import YOLO
 
 from collections import defaultdict
 import re
 
-# ── Groq client ───────────────────────────────────────────────────────────────
+# ── Groq client (Vision) ──────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
+
+# ── NVIDIA client (Text) ──────────────────────────────────────────────────────
+nvidia_client = OpenAI(
+    base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
 
 # ── YOLO model — loaded once at import time ───────────────────────────────────
 _YOLO_MODEL = YOLO("yolov8n.pt")
@@ -105,7 +112,8 @@ def _yolo_detect(frame_path: str) -> dict:
     Falls back to {'label': 'unknown', 'confidence': 0.0, 'reasoning': ''}
     if no mapped civic object is found.
     """
-    results    = _YOLO_MODEL(frame_path, verbose=False)[0]
+    model = get_yolo_model()
+    results = model(frame_path, verbose=False)[0]
     detections = []
     obj_labels = []
 
@@ -159,7 +167,7 @@ def _groq_vision_detect(frame_b64: str) -> dict:
                  'image_url': {'url': f'data:image/jpeg;base64,{frame_b64}'}},
                 {'type': 'text', 'text': _GROQ_VISION_ISSUE_PROMPT},
             ]}],
-            max_tokens=150,
+            max_tokens=1024,
         )
         raw    = response.choices[0].message.content.strip()
         match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -191,13 +199,13 @@ def _multimodal_refine(
     whatsapp:      str,
 ) -> tuple:
     """
-    Asks Groq text LLM to verify/refine the visual classification using
+    Asks NVIDIA text LLM to verify/refine the visual classification using
     transcript, on-screen text, and WhatsApp context as additional signals.
     Falls back to vision_result unchanged if the API call fails.
     """
     try:
-        response = client.chat.completions.create(
-            model='llama-3.3-70b-versatile',
+        response = nvidia_client.chat.completions.create(
+            model=os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct"),
             messages=[{'role': 'user', 'content': _MULTIMODAL_ISSUE_PROMPT.format(
                 visual     = (f"{vision_result['label']} "
                               f"({vision_result['confidence']:.2f}) — "
@@ -206,7 +214,7 @@ def _multimodal_refine(
                 on_screen  = on_screen[:200]  if on_screen  else 'none',
                 whatsapp   = whatsapp[:200]   if whatsapp   else 'none',
             )}],
-            max_tokens=150,
+            max_tokens=1024,
         )
         raw     = response.choices[0].message.content.strip()
         raw     = raw.replace('```json', '').replace('```', '').strip()
@@ -288,6 +296,14 @@ def detect_issue(context: dict) -> dict:
     print(f"\n  {raw_label} → canonical: \"{issue_type}\"  "
           f"conf={refined.get('confidence', 0.0):.2f}")
     print("=" * 55)
+
+    # FIX
+    return {
+        'issue_type':      issue_type,
+        'confidence':      float(refined.get('confidence', 0.0)),
+        'reasoning':       refined.get('reasoning', ''),
+        'refinement_used': refinement_used,
+    }nt("=" * 55)
 
     # FIX
     return {
