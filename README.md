@@ -43,25 +43,49 @@ Execution (Submission + Escalation)
 ```
 project-root/
 │
-├── app/ # Backend (FastAPI + orchestration)
-│ ├── main.py # Server entry point
-│ ├── orchestrator.py # Core pipeline controller
-│ ├── context.py # Shared context object
-│ ├── routes/ # API endpoints
-│ ├── db/ # Database layer
-│ ├── schemas/ # Request/response models
-│ └── tools/ # Agent tools
-│ ├── pair_d/ # Perception agents
-│ ├── trio_c/ # Reasoning agents
-│ └── pair_b/ # Execution agents
-│
-├── frontend/ # React Native (Expo) app
-├── dummy_portal/ # Simulated complaint portal
-├── configs/ # Static authority data
-├── data/ # Test inputs and datasets
-├── scripts/ # Testing utilities
-│
-├── .env # Environment variables (not committed)
+├── app/
+│   ├── main.py
+│   ├── orchestrator.py
+│   ├── context.py
+│   ├── cnstants.py
+│   ├── validators.py
+│   ├── routes/
+│   │   └── api.py
+│   ├── db/
+│   │   └── database.py
+│   ├── schemas/
+│   │   ├── issue_schema.py
+│   │   ├── requests.py
+│   │   └── responses.py
+│   └── tools/
+│       ├── pair_b/
+│       │   ├── email_dispatch_tool.py
+│       │   ├── escalation_engine_tool.py
+│       │   ├── portal_navigator_tool.py
+│       │   ├── submission_agent_tool.py
+│       │   ├── submission_tool_wrapped.py
+│       │   └── whatsapp_dispatch_tool.py
+│       ├── pair_d/
+│       │   ├── content_extractor_tool.py
+│       │   ├── issue_detector_tool.py
+│       │   ├── location_resolver_tool.py
+│       │   ├── vision_pipeline_tool.py
+│       │   └── vision_tool_wrapped.py
+│       └── trio_c/
+│           ├── authority_lookup_tool.py
+│           ├── complaint_assembly_tool_wrapped.py
+│           ├── complaint_draft_tool.py
+│           ├── severity_score_tool.py
+│           └── smart_rag_tool.py
+├── frontend/
+├── dummy_portal/
+├── configs/
+│   └── authority_data.json
+├── data/
+│   ├── test_vision/
+│   └── environmental_laws.txt
+├── scripts/
+├── .env
 ├── requirements.txt
 └── README.md
 ```

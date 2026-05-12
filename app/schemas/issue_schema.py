@@ -2,25 +2,16 @@
 app/schemas/issue_schema.py
 
 Core Pydantic state models for the Agentic Civic Engagement Framework.
-These models replace the legacy `ComplaintContext` global state object and serve
-as the single source of truth flowing through every smolagents tool in the pipeline.
-
-Design philosophy:
-  - Every field carries a `description` so smolagents CodeAgent can reason about
-    what each field means without additional prompting.
-  - Models are deliberately flat (no deep nesting) to keep tool signatures simple.
-  - Optional fields signal data that *may not yet exist* at a given pipeline stage.
-  - All enums are string-based so they survive JSON serialisation across tool calls.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union  # <-- ADD Union HERE
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, AnyUrl, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -51,13 +42,6 @@ class ComplaintStatus(str, Enum):
     FAILED    = "failed"
 
 
-class SeverityLevel(str, Enum):
-    LOW      = "low"
-    MEDIUM   = "medium"
-    HIGH     = "high"
-    CRITICAL = "critical"
-
-
 # ---------------------------------------------------------------------------
 # Model 1 — MediaMetadata  (pipeline INPUT)
 # ---------------------------------------------------------------------------
@@ -65,19 +49,17 @@ class SeverityLevel(str, Enum):
 class MediaMetadata(BaseModel):
     """
     Describes a single piece of raw civic media ingested from social platforms.
-    This is the entry-point object passed to the agent at the start of each run.
     """
 
     run_id: UUID = Field(
         default_factory=uuid4,
         description=(
             "Unique identifier for this processing run. "
-            "Propagated unchanged through every subsequent model so all tool "
-            "outputs can be correlated back to the same ingestion event."
+            "Propagated unchanged through every subsequent model..."
         ),
     )
 
-    media_url: HttpUrl = Field(
+    media_url: AnyUrl = Field(
         description=(
             "Publicly accessible URL to the raw image or video file. "
             "Tools in pair_b will download and pass this to the vision model."
@@ -144,7 +126,6 @@ class MediaMetadata(BaseModel):
 class ExtractedIssue(BaseModel):
     """
     Structured representation of the civic issue detected by the vision tool.
-    Produced by pair_b tools; consumed by pair_d (routing) and trio_c (drafting).
     """
 
     run_id: UUID = Field(
@@ -158,11 +139,10 @@ class ExtractedIssue(BaseModel):
         ),
     )
 
-    severity: SeverityLevel = Field(
-        description=(
-            "Estimated severity of the issue based on visual evidence. "
-            "'critical' means immediate risk to public health or safety."
-        ),
+    severity: int = Field(
+        ge=1, 
+        le=5, 
+        description="Severity of the issue from 1 (lowest) to 5 (bypass — routes directly to central authority)."
     )
 
     location_raw: Optional[str] = Field(
@@ -218,7 +198,8 @@ class ExtractedIssue(BaseModel):
     @model_validator(mode="after")
     def flag_low_confidence(self) -> "ExtractedIssue":
         """Warn in the description if confidence is below threshold."""
-        if self.confidence_score < 0.5:
+        from app.constants import ConfidenceThreshold
+        if self.confidence_score < ConfidenceThreshold.HUMAN_REVIEW_REQUIRED:
             self.description = (
                 f"[LOW CONFIDENCE — REVIEW REQUIRED] {self.description}"
             )
@@ -232,7 +213,7 @@ class ExtractedIssue(BaseModel):
 class AuthorityContact(BaseModel):
     """
     Contact details for the government authority responsible for resolving
-    the detected issue. Produced by the routing tool in pair_d.
+    the detected issue.
     """
 
     run_id: UUID = Field(
@@ -308,9 +289,6 @@ class AuthorityContact(BaseModel):
 class FinalComplaint(BaseModel):
     """
     The complete, submission-ready civic complaint.
-    Assembles fields from all upstream models into a single document that can
-    be POSTed to a government portal, emailed, or stored in the database.
-    This is the terminal state produced by trio_c tools.
     """
 
     run_id: UUID = Field(
@@ -356,8 +334,10 @@ class FinalComplaint(BaseModel):
         description="Top-level category of the civic issue.",
     )
 
-    severity: SeverityLevel = Field(
-        description="Severity level as assessed by the vision model.",
+    severity: int = Field(
+        ge=1, 
+        le=5, 
+        description="Severity of the issue from 1 (lowest) to 5 (bypass — routes directly to central authority)."
     )
 
     issue_location: str = Field(
@@ -430,9 +410,7 @@ class FinalComplaint(BaseModel):
     @model_validator(mode="after")
     def compute_follow_up(self) -> "FinalComplaint":
         """Auto-compute follow_up_due if submitted_at is set."""
-        from datetime import timedelta
+        from app.constants import SLADefaults
         if self.submitted_at and self.follow_up_due is None:
-            # Default SLA of 30 days; the submission tool should override
-            # this with AuthorityContact.sla_days before calling model_validate.
-            self.follow_up_due = self.submitted_at + timedelta(days=30)
+            self.follow_up_due = self.submitted_at + timedelta(days=SLADefaults.STANDARD)
         return self

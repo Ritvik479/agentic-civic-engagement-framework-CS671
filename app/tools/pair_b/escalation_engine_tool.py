@@ -57,7 +57,6 @@ from uuid import UUID
 from app.schemas.issue_schema import (
     FinalComplaint,
     IssueCategory,
-    SeverityLevel,
     ComplaintStatus,
 )
 from app.db.database import (
@@ -124,18 +123,6 @@ ESCALATION_LADDER: dict[int, tuple[int, str]] = {
     3: (4, "escalated_l4"),
 }
 
-# ---------------------------------------------------------------------------
-# Severity int → SeverityLevel enum
-# ---------------------------------------------------------------------------
-
-_INT_TO_SEVERITY: dict[int, SeverityLevel] = {
-    0: SeverityLevel.LOW,
-    1: SeverityLevel.LOW,
-    2: SeverityLevel.MEDIUM,
-    3: SeverityLevel.HIGH,
-    4: SeverityLevel.CRITICAL,
-    5: SeverityLevel.CRITICAL,
-}
 
 # ---------------------------------------------------------------------------
 # Authority data — loaded once at module import
@@ -431,10 +418,9 @@ def _build_context(
         severity (int) → severity        (SeverityLevel enum)
         authority_level→ status          (ComplaintStatus enum)
     """
-    # Clamp severity to valid range
+    # Clamp severity to valid range (1-5 as per issue_schema.py)
     severity_int = complaint.get("severity") or 1
-    severity_int = max(0, min(int(severity_int), 5))
-    severity_enum = _INT_TO_SEVERITY.get(severity_int, SeverityLevel.MEDIUM)
+    severity_int = max(1, min(int(severity_int), 5)) # Changed min to 1
 
     # Map issue_type string → IssueCategory enum, falling back to UNKNOWN
     raw_issue_type = (complaint.get("issue_type") or "unknown").strip().lower()
@@ -474,7 +460,7 @@ def _build_context(
 
         # Issue fields
         issue_category=issue_category,
-        severity=severity_enum,
+        severity=severity_int,
         issue_location=(
             complaint.get("location_label")
             or complaint.get("district")
