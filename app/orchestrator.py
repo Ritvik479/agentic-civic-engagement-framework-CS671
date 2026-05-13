@@ -39,7 +39,7 @@ logging.basicConfig(
 logger = logging.getLogger("orchestrator")
 
 
-def _build_llm() -> InferenceClientModel | LiteLLMModel: # Update return type hint
+def _build_llm() -> InferenceClientModel | LiteLLMModel:
     backend = os.getenv("ORCHESTRATOR_LLM", "hf").lower()
     if backend == "litellm":
         model_id = os.getenv("LITELLM_MODEL", "openai/gpt-4o")
@@ -74,52 +74,70 @@ def build_agent(extra_tools: Optional[list] = None) -> ToolCallingAgent:
 
 
 def run_complaint_pipeline(media: MediaMetadata) -> FinalComplaint:
-    agent = build_agent()
+    logger.info("Starting deterministic pipeline  run_id=%s", media.run_id)
     
-    # ── Step 0: Prep simplified inputs for the agent ──
-    # We pass individual fields to make it easy for the agent to call tools
-    # without having to manage complex JSON strings manually.
-    initial_args = {
-        "run_id":    str(media.run_id),
-        "media_url": str(media.media_url),
-        "geotag":    media.geotag or "",
-        "caption":   media.caption or "",
-        "platform":  media.platform,
-        "posted_at": media.posted_at.isoformat(),
-    }
-    
-    task_prompt = f"""Process the civic report for Run ID: {initial_args['run_id']}.
-
-IMPORTANT: You MUST use strictly valid JSON for tool calls. Use DOUBLE QUOTES (") for all keys and string values. Single quotes (') are NOT allowed in the JSON structure.
-
-Follow these steps strictly:
-1. Call 'vision_tool' using 'run_id', 'media_url', 'geotag', and 'caption' from the provided variables. It returns a JSON string with issue details.
-2. Parse the JSON from 'vision_tool' to get 'category', 'location_resolved', 'description', and 'severity'.
-3. Call 'route_to_authority' using 'run_id', 'category', 'location_resolved', and 'severity' to find the government department. It returns a JSON string with authority details.
-4. Parse the JSON from 'route_to_authority' to get 'department_name', 'department_code', 'portal_url', and 'submission_email'.
-5. Call 'complaint_assembly_tool' to draft the formal text and create the complaint object. Pass all required fields collected so far.
-6. Finally, call 'submission_tool' with the assembled complaint details to submit it.
-7. Return the final JSON from 'submission_tool' as your final answer. You MUST provide the full JSON object, not a text summary."""
-    
-    logger.info("Starting pipeline  run_id=%s", media.run_id)
-    raw_output: str = agent.run(task_prompt, additional_args=initial_args)
-
     try:
-        # Check if the agent returned an error JSON or a plain string instead of FinalComplaint
-        try:
-            parsed = json.loads(raw_output)
-            if isinstance(parsed, dict) and "error" in parsed:
-                raise ValueError(f"Agent reported error: {parsed['error']}")
-            if isinstance(parsed, dict) and "answer" in parsed:
-                # Agent used final_answer with a string — try to find the last tool output
-                # Or just treat the raw_output as the source for model_validate if it looks like JSON
-                pass
-        except json.JSONDecodeError:
-            pass 
-
-        # Robustness: If raw_output is not valid JSON but the pipeline actually finished,
-        # we try to reconstruct a successful object or report the parsing error.
-        complaint = FinalComplaint.model_validate_json(raw_output)
+        # ── Step 1: Vision ───────────────────────────────────────────────────
+        logger.info("[Pipeline] Step 1: Vision Analysis")
+        vision_json = vision_tool(
+            run_id=str(media.run_id),
+            media_url=str(media.media_url),
+            geotag=media.geotag or "",
+            caption=media.caption or ""
+        )
+        vision_res = json.loads(vision_json)
+        if "error" in vision_res:
+            raise ValueError(f"Vision tool failed: {vision_res['error']}")
+        
+        # ── Step 2: Routing ──────────────────────────────────────────────────
+        logger.info("[Pipeline] Step 2: Authority Routing")
+        routing_json = route_to_authority(
+            run_id=str(media.run_id),
+            category=vision_res["category"],
+            location_resolved=vision_res["location_resolved"],
+            severity=vision_res["severity"]
+        )
+        routing_res = json.loads(routing_json)
+        if "error" in routing_res:
+            raise ValueError(f"Routing tool failed: {routing_res['error']}")
+        
+        # ── Step 3: Assembly ─────────────────────────────────────────────────
+        logger.info("[Pipeline] Step 3: Complaint Assembly")
+        assembly_json = complaint_assembly_tool(
+            run_id=str(media.run_id),
+            media_url=str(media.media_url),
+            platform=media.platform,
+            posted_at=media.posted_at.isoformat(),
+            category=vision_res["category"],
+            severity=vision_res["severity"],
+            location_resolved=vision_res["location_resolved"],
+            description=vision_res["description"],
+            authority_name=routing_res["department_name"],
+            authority_code=routing_res["department_code"],
+            authority_portal=routing_res.get("portal_url") or "",
+            submission_endpoint=routing_res.get("submission_email") or ""
+        )
+        assembly_res = json.loads(assembly_json)
+        if "error" in assembly_res:
+            raise ValueError(f"Assembly tool failed: {assembly_res['error']}")
+        
+        # ── Step 4: Submission ───────────────────────────────────────────────
+        logger.info("[Pipeline] Step 4: Submission")
+        submission_json = submission_tool(
+            run_id=str(media.run_id),
+            authority_name=routing_res["department_name"],
+            authority_code=routing_res["department_code"],
+            submission_endpoint=routing_res.get("submission_email") or "",
+            authority_portal=routing_res.get("portal_url") or "",
+            description=assembly_res["issue_description"],
+            category=vision_res["category"],
+            severity=vision_res["severity"],
+            media_url=str(media.media_url),
+            platform=media.platform,
+            posted_at=media.posted_at.isoformat()
+        )
+        
+        complaint = FinalComplaint.model_validate_json(submission_json)
         
         # Wire validators
         errors = validate_final_complaint(complaint)
@@ -128,8 +146,8 @@ Follow these steps strictly:
             if complaint.status != ComplaintStatus.FAILED:
                 complaint.status = ComplaintStatus.FAILED
                 
-    except Exception as parse_error:
-        logger.error("Pipeline parsing failed: %s", parse_error)
+    except Exception as pipeline_error:
+        logger.error("Pipeline failed: %s", pipeline_error)
         complaint = FinalComplaint(
             run_id=media.run_id,
             status=ComplaintStatus.FAILED,
@@ -139,9 +157,9 @@ Follow these steps strictly:
             issue_category=IssueCategory.UNKNOWN,
             severity=1,
             issue_location="unresolved",
-            issue_description="Pipeline failed — see validation_errors for details.",
+            issue_description=f"Pipeline failed: {str(pipeline_error)}",
             authority_name="unresolved",
             authority_code="unresolved",
-            validation_errors=[f"Agent output parse error: {str(parse_error)}", f"Raw output: {str(raw_output)}"],
+            validation_errors=[str(pipeline_error)],
         )
     return complaint

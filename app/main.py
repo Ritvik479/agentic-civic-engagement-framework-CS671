@@ -16,7 +16,7 @@ from app.db.database import init_db
 from app.routes.api import router
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from app.tools.pair_b.escalation_engine_tool import _run_escalation_check_async
+from app.tools.pair_b.escalation_engine_tool import run_escalation_check
 
 scheduler = AsyncIOScheduler()
 
@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("[Server] Database initialized.")
 
-    scheduler.add_job(_run_escalation_check_async, "interval", minutes=30)
+    scheduler.add_job(run_escalation_check, "interval", minutes=30)
     scheduler.start()
     print("[Server] Escalation scheduler started.")
 
@@ -48,6 +48,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
+    # In production, replace ["*"] with specific origins like ["http://localhost:19006"]
     allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],

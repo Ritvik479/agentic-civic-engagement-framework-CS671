@@ -81,16 +81,6 @@ class SLADefaults:
 
 SEVERITY_TO_SLA_DAYS: dict[int, int] = {
     1: SLADefaults.STANDARD,
-    2: SLADefaults.MEDIUM if hasattr(SLADefaults, 'MEDIUM') else SLADefaults.STANDARD,
-    3: SLADefaults.URGENT if hasattr(SLADefaults, 'URGENT') else SLADefaults.URGENT, 
-    4: SLADefaults.CRITICAL,
-    5: SLADefaults.CRITICAL,
-}
-
-# Note: Based on provided SLADefaults class content, I used logic matching:
-# 1: STANDARD, 2: STANDARD (no MEDIUM provided in file), 3: URGENT, 4: CRITICAL, 5: CRITICAL
-SEVERITY_TO_SLA_DAYS: dict[int, int] = {
-    1: SLADefaults.STANDARD,
     2: SLADefaults.STANDARD,
     3: SLADefaults.URGENT,
     4: SLADefaults.CRITICAL,

@@ -20,8 +20,9 @@ from typing import Optional
 # Example:
 # {
 #   "id": "CMP-AB12CD34",
-#   "final_lat": 31.7754,
-#   "final_lng": 76.9862
+#   "final_state": "Punjab",
+#   "final_district": "Mandi",
+#   "final_landmark": "Near bus stand"
 # }
 # ---------------------------------------------------------------------------
 class ConfirmLocationRequest(BaseModel):

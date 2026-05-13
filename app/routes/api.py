@@ -278,10 +278,12 @@ async def confirm_location(data: ConfirmLocationRequest):
         f"Location confirmed: {data.final_landmark or ''}, {data.final_district}, {data.final_state}".strip(", ")
     )
 
-    await update_status(data.id, "authority_mapped")
+    # BUG FIX: Only update status if it's not already terminal
+    if complaint["submission_status"] not in ("submitted", "failed", "email_only") and not complaint["submission_status"].startswith("escalated"):
+        await update_status(data.id, "authority_mapped")
 
     return JSONResponse(content={
-        "status": "authority_mapped"
+        "status": "authority_mapped" if complaint["submission_status"] not in ("submitted", "failed", "email_only") else complaint["submission_status"]
     })
 
 

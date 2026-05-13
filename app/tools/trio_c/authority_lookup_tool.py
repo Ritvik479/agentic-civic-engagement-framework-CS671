@@ -1,7 +1,10 @@
+import os
 import json
 
-# Load authority dataset
-with open("configs/authority_data.json") as f:
+# Load authority dataset using path relative to this file
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "configs", "authority_data.json")
+
+with open(CONFIG_PATH) as f:
     authority_data = json.load(f)["data"]
 
 # Build lookup index

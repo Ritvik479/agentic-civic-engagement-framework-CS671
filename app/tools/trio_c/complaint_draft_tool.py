@@ -30,7 +30,7 @@ def extract_location_parts(location: str):
     return "Unknown", "Unknown"
 
 
-def draft_complaint(issue: str, description: str, location: str) -> str:
+def draft_complaint(issue: str, description: str, location: str, severity: int = 2) -> str:
 
     # -------------------------------
     # STEP 1 — Extract district/state
@@ -38,10 +38,10 @@ def draft_complaint(issue: str, description: str, location: str) -> str:
     district, state = extract_location_parts(location)
 
     # -------------------------------
-    # STEP 2 — Calculate severity
+    # STEP 2 — Calculate severity (REMOVED - now passed as argument)
     # -------------------------------
-    severity_result = calculate_severity(issue, description, location)
-    severity = severity_result.get("severity", 2)
+    # severity_result = calculate_severity(issue, description, location)
+    # severity = severity_result.get("severity", 2)
 
     # -------------------------------
     # STEP 3 — Retrieve laws

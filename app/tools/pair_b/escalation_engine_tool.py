@@ -159,11 +159,7 @@ _AUTHORITY_INDEX: dict[tuple, dict] = {
 # Public entry point — called by APScheduler
 # ---------------------------------------------------------------------------
 
-def run_escalation_check() -> dict:
-    """Sync entry point for APScheduler."""
-    return asyncio.run(_run_escalation_check_async())
-
-async def _run_escalation_check_async() -> dict:
+async def run_escalation_check() -> dict:
     summary = {"checked": 0, "escalated": 0, "skipped": 0, "errors": []}
     all_complaints = await fetch_slim_complaints()
     escalatable = [c for c in all_complaints if c.get("submission_status") in ESCALATABLE_STATUSES]
@@ -380,7 +376,8 @@ def _fetch_portal_age(complaint_ref_id: str) -> float | None:
 
 
 def _age_from_db(complaint: dict) -> float:
-    ts_str = complaint.get("created_at") or complaint.get("updated_at", "")
+    # BUG FIX: Use submitted_at if available, not just created_at
+    ts_str = complaint.get("submitted_at") or complaint.get("created_at") or complaint.get("updated_at", "")
     if not ts_str:
         return 0.0
     try:

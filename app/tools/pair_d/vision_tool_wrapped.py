@@ -39,7 +39,7 @@ def vision_tool(run_id: str, media_url: str, geotag: str = "", caption: str = ""
             "Road Damage": IssueCategory.ROAD_DAMAGE,
             "Sewage Overflow": IssueCategory.SEWAGE_OVERFLOW,
         }
-        category = category_map.get(raw_result.get("issue_type"), IssueCategory.SOLID_WASTE)
+        category = category_map.get(raw_result.get("issue_type"), IssueCategory.UNKNOWN)
         
         severity = raw_result.get("severity", 3)
         severity = max(1, min(5, int(severity)))

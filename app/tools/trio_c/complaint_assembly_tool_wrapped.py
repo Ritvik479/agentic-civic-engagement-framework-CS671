@@ -54,6 +54,7 @@ def complaint_assembly_tool(
             issue=category,        
             description=description,     
             location=location_resolved or "Unknown",
+            severity=severity_int,
         )
 
         complaint = FinalComplaint(

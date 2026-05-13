@@ -53,16 +53,25 @@ nvidia_client = OpenAI(
     api_key=os.getenv("NVIDIA_API_KEY")
 )
 
-# ── Whisper model — loaded once at import time, not on every call ─────────────
-# "medium" handles Hindi / regional languages well; swap to "large-v3" for
-# better accuracy at the cost of speed.
-_WHISPER_MODEL = whisper.load_model("medium")
+# ── Whisper model — lazy loaded ──────────────────────────────────────────────
+_WHISPER_MODEL = None
 
-# ── YOLO model (used only for frame scoring here, NOT issue detection) ────────
+def get_whisper_model():
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is None:
+        print("[ContextExtractor] Loading Whisper model (medium)...")
+        _WHISPER_MODEL = whisper.load_model("medium")
+    return _WHISPER_MODEL
+
+# ── YOLO model — lazy loaded ─────────────────────────────────────────────────
 from ultralytics import YOLO
-_YOLO_MODEL = YOLO("yolov8n.pt")   # lightweight nano — only used for scoring
+_YOLO_MODEL = None
 
 def get_yolo_model():
+    global _YOLO_MODEL
+    if _YOLO_MODEL is None:
+        print("[ContextExtractor] Loading YOLO model (yolov8n)...")
+        _YOLO_MODEL = YOLO("yolov8n.pt")
     return _YOLO_MODEL
 
 # Objects that indicate a news-studio / indoor shot — penalise these frames
@@ -265,7 +274,7 @@ def _get_transcript(video_path: str, youtube_auto_subs: str = '') -> dict:
     if audio_path is None:
         return {"text": "", "language": "unknown", "source": "none"}
 
-    result = _WHISPER_MODEL.transcribe(audio_path, task="transcribe")
+    result = get_whisper_model().transcribe(audio_path, task="transcribe")
     os.remove(audio_path)
     print(f"  [transcript] Whisper done | lang={result['language']}")
     return {
@@ -485,12 +494,4 @@ def extract_context(
 
 
     return context
-
-    print("\n" + "=" * 55)
-    print("AGENT 0 COMPLETE")
-    print(f"  transcript   : {len(context['transcript'])} chars "
-          f"(lang={context['transcript_lang']}, src={context['transcript_source']})")
-    print(f"  on_screen    : {len(context['on_screen_text'])} chars")
-    print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
-    print("=" * 55)
 

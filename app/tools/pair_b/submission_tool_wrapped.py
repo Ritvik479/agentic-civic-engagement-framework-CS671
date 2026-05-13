@@ -20,6 +20,7 @@ from typing import Any
 def submission_tool(
     run_id: str,
     authority_name: str,
+    authority_code: str,
     submission_endpoint: str,
     authority_portal: str,
     description: str,
@@ -34,6 +35,7 @@ def submission_tool(
     Args:
         run_id: Unique ID.
         authority_name: Name of authority.
+        authority_code: Department code.
         submission_endpoint: Email/API.
         authority_portal: URL.
         description: Drafted complaint text.
@@ -85,7 +87,7 @@ def submission_tool(
             issue_description=description,
             evidence_urls=[media_url],
             authority_name=authority_name,
-            authority_code="SUBMITTED",
+            authority_code=authority_code,
             authority_portal=authority_portal if authority_portal else None,
             submission_endpoint=submission_endpoint if submission_endpoint else None,
             complaint_id=result.get("complaint_ref_id"),

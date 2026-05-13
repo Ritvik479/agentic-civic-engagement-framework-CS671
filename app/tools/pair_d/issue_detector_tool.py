@@ -33,10 +33,14 @@ nvidia_client = OpenAI(
     api_key=os.getenv("NVIDIA_API_KEY")
 )
 
-# ── YOLO model — loaded once at import time ───────────────────────────────────
-_YOLO_MODEL = YOLO("yolov8n.pt")
+# ── YOLO model — lazy loaded ──────────────────────────────────────────────────
+_YOLO_MODEL = None
 
 def get_yolo_model():
+    global _YOLO_MODEL
+    if _YOLO_MODEL is None:
+        print("[IssueDetector] Loading YOLO model (yolov8n)...")
+        _YOLO_MODEL = YOLO("yolov8n.pt")
     return _YOLO_MODEL
 
 # ── YOLO COCO class → raw issue type ─────────────────────────────────────────
@@ -299,15 +303,6 @@ def detect_issue(context: dict) -> dict:
     print(f"\n  {raw_label} → canonical: \"{issue_type}\"  "
           f"conf={refined.get('confidence', 0.0):.2f}")
     print("=" * 55)
-
-    # FIX
-    return {
-        'issue_type':      issue_type,
-        'confidence':      float(refined.get('confidence', 0.0)),
-        'reasoning':       refined.get('reasoning', ''),
-        'refinement_used': refinement_used,
-
-    }
 
     # FIX
     return {

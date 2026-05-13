@@ -8,7 +8,7 @@ import aiosqlite
 import os
 from typing import Optional
 
-from app.context import ComplaintContext
+from app.schemas.issue_schema import FinalComplaint
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ async def fetch_logs(tracking_id: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Update full complaint record from FinalComplaint (pipeline terminal state)
 # ---------------------------------------------------------------------------
-async def save_complaint_record(tracking_id: str, complaint: "FinalComplaint"):
+async def save_complaint_record(tracking_id: str, complaint: FinalComplaint):
     conn = await aiosqlite.connect(DB_PATH)
     try:
         await conn.execute("""
@@ -242,95 +242,6 @@ async def save_complaint_record(tracking_id: str, complaint: "FinalComplaint"):
 
 
 # ---------------------------------------------------------------------------
-# Insert or update full complaint record
-# Safe to call multiple times as pipeline stages complete
-# ---------------------------------------------------------------------------
-async def save_complaint(ctx: ComplaintContext):
-    conn = await aiosqlite.connect(DB_PATH)
-    try:
-        await conn.execute("""
-            INSERT INTO complaints (
-                tracking_id, user_id, video_path, video_url,
-                name, email, phone, user_issue_description,
-                issue_type,
-                state, district, landmark, location_label,
-                severity, transcript,
-                authority_name, authority_email, authority_portal,
-                complaint_text, authority_level, authority_level_num,
-                submission_status, submission_screenshot,
-                complaint_ref_id, authority_phone,
-                error
-            )
-            VALUES (
-                :tracking_id, :user_id, :video_path, :video_url,
-                :name, :email, :phone, :user_issue_description,
-                :issue_type,
-                :state, :district, :landmark, :location_label,
-                :severity, :transcript,
-                :authority_name, :authority_email, :authority_portal,
-                :complaint_text, :authority_level, :authority_level_num,
-                :submission_status, :submission_screenshot,
-                :complaint_ref_id, :authority_phone,
-                :error
-            )
-            ON CONFLICT(tracking_id) DO UPDATE SET
-                issue_type              = excluded.issue_type,
-                state                   = excluded.state,
-                district                = excluded.district,
-                landmark                = excluded.landmark,
-                location_label          = excluded.location_label,
-                severity                = excluded.severity,
-                transcript              = excluded.transcript,
-                authority_name          = excluded.authority_name,
-                authority_email         = excluded.authority_email,
-                authority_portal        = excluded.authority_portal,
-                complaint_text          = excluded.complaint_text,
-                authority_level         = excluded.authority_level,
-                authority_level_num     = excluded.authority_level_num,
-                submission_status       = excluded.submission_status,
-                submission_screenshot   = excluded.submission_screenshot,
-                complaint_ref_id        = excluded.complaint_ref_id,
-                authority_phone         = excluded.authority_phone,
-                user_issue_description  = excluded.user_issue_description,
-                name                    = excluded.name,
-                email                   = excluded.email,
-                phone                   = excluded.phone,
-                error                   = excluded.error,
-                updated_at              = CURRENT_TIMESTAMP
-        """, {
-            "tracking_id":              ctx.tracking_id,
-            "user_id":                  ctx.user_id,
-            "video_path":               ctx.video_path,
-            "video_url":                ctx.video_url,
-            "name":                     ctx.name,
-            "email":                    ctx.email,
-            "phone":                    ctx.phone,
-            "user_issue_description":   ctx.user_issue_description,
-            "issue_type":               ctx.issue_type,
-            "state":                    ctx.state,
-            "district":                 ctx.district,
-            "landmark":                 ctx.landmark,
-            "location_label":           ctx.location_label,
-            "severity":                 ctx.severity,
-            "transcript":               ctx.transcript,
-            "authority_name":           ctx.authority_name,
-            "authority_email":          ctx.authority_email,
-            "authority_portal":         ctx.authority_portal,
-            "complaint_text":           ctx.complaint_text,
-            "authority_level":          ctx.authority_level,
-            "authority_level_num":      ctx.authority_level_num,
-            "submission_status":        ctx.submission_status,
-            "submission_screenshot":    ctx.submission_screenshot,
-            "complaint_ref_id":         ctx.complaint_ref_id,
-            "authority_phone":          ctx.authority_phone,
-            "error":                    ctx.error,
-        })
-        await conn.commit()
-    finally:
-        await conn.close()
-
-
-# ---------------------------------------------------------------------------
 # Fetch one complaint by tracking ID
 # Returns full complaint dict, or None if not found
 # ---------------------------------------------------------------------------
@@ -352,10 +263,6 @@ async def fetch_complaint(tracking_id: str) -> Optional[dict]:
 
 # ---------------------------------------------------------------------------
 # Fetch slim complaint list for dashboard
-#
-# FIX: was using .format() to splice a WHERE clause into the query string.
-# That pattern looks like a SQL injection risk and confuses reviewers.
-# Replaced with two explicit queries — one for a specific user, one for all.
 # ---------------------------------------------------------------------------
 async def fetch_slim_complaints(user_id: str = None) -> list[dict]:
     conn = await aiosqlite.connect(DB_PATH)
