@@ -306,4 +306,13 @@ def detect_issue(context: dict) -> dict:
         'confidence':      float(refined.get('confidence', 0.0)),
         'reasoning':       refined.get('reasoning', ''),
         'refinement_used': refinement_used,
+
+    }
+
+    # FIX
+    return {
+        'issue_type':      issue_type,
+        'confidence':      float(refined.get('confidence', 0.0)),
+        'reasoning':       refined.get('reasoning', ''),
+        'refinement_used': refinement_used,
     }

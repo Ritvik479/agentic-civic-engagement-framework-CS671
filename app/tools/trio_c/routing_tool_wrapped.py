@@ -25,9 +25,8 @@ def route_to_authority(run_id: str, category: str, location_resolved: str, sever
         severity: The severity score (1-4).
     """
     try:
-        # Robustness: ensure severity is int
         try:
-            severity_int = int(severity)
+            severity_int = max(1, min(5, int(severity)))
         except (ValueError, TypeError):
             severity_int = 3
 

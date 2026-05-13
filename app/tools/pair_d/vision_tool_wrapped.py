@@ -41,10 +41,13 @@ def vision_tool(run_id: str, media_url: str, geotag: str = "", caption: str = ""
         }
         category = category_map.get(raw_result.get("issue_type"), IssueCategory.SOLID_WASTE)
         
+        severity = raw_result.get("severity", 3)
+        severity = max(1, min(5, int(severity)))
+
         issue = ExtractedIssue(
             run_id=run_id,
             category=category,
-            severity=3, # Default severity, can be refined later
+            severity=severity,
             location_raw=geotag,
             location_resolved=raw_result.get("location_label"),
             description=raw_result.get("transcript") or "Civic issue detected",

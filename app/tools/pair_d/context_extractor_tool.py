@@ -483,4 +483,17 @@ def extract_context(
     print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
     print("=" * 55)
 
+<<<<<<< HEAD
+=======
+    return context
+
+    print("\n" + "=" * 55)
+    print("AGENT 0 COMPLETE")
+    print(f"  transcript   : {len(context['transcript'])} chars "
+          f"(lang={context['transcript_lang']}, src={context['transcript_source']})")
+    print(f"  on_screen    : {len(context['on_screen_text'])} chars")
+    print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
+    print("=" * 55)
+
+>>>>>>> 6d6772036b2692041e257aeac134c49c4c740982
     return context

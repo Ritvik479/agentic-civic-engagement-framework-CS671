@@ -45,7 +45,7 @@ def submission_tool(
     """
     try:
         try:
-            severity_int = int(severity)
+            severity_int = max(1, min(5, int(severity)))
         except (ValueError, TypeError):
             severity_int = 3
 

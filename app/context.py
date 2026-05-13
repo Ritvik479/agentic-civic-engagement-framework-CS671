@@ -49,7 +49,7 @@ class ComplaintContext:
     error: Optional[str] = None
 
     def __post_init__(self):
-        # Enforce severity range 0–5
+        # Enforce severity range 1–5
         # Trio C or Pair D sets this; a value outside range is a bug, not user input
-        if not (0 <= self.severity <= 5):
-            self.severity = max(0, min(5, self.severity))
+        if not (1 <= self.severity <= 5):
+            self.severity = max(1, min(5, self.severity))
