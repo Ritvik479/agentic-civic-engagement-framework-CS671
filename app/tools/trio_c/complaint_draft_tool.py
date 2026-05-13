@@ -85,6 +85,7 @@ Instructions:
 - Do NOT include placeholders or extra formatting
 - Keep it under 120 words
 """
+    print(f"\n[AI] Sending Complaint Drafting Prompt:\n{prompt}\n")
 
     # -------------------------------
     # STEP 6 — LLM Call

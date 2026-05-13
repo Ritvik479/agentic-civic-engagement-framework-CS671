@@ -44,7 +44,7 @@ def route_to_authority(run_id: str, category: str, location_resolved: str, sever
         contact = AuthorityContact(
             run_id=run_id,
             department_name=auth_data["authority_name"],
-            department_code=CATEGORY_TO_DEFAULT_DEPT.get(category, "GENERIC-CIV"),
+            department_code=auth_data.get("authority_code") or CATEGORY_TO_DEFAULT_DEPT.get(category, "GENERIC-CIV"),
             submission_email=auth_data.get("authority_email"),
             submission_api_url=None,
             portal_url=auth_data.get("authority_portal"),

@@ -29,6 +29,7 @@ def submission_tool(
     media_url: str,
     platform: str,
     posted_at: str,
+    location_resolved: str = "Unknown",
 ) -> str:
     """
     Submits the complaint to government portals and email.
@@ -44,6 +45,7 @@ def submission_tool(
         media_url: Evidence URL.
         platform: Source platform.
         posted_at: ISO timestamp.
+        location_resolved: The confirmed/resolved location string.
     """
     try:
         try:
@@ -83,7 +85,7 @@ def submission_tool(
             posted_at=posted_at,
             issue_category=IssueCategory(category),
             severity=severity_int,
-            issue_location="See Description",
+            issue_location=location_resolved,
             issue_description=description,
             evidence_urls=[media_url],
             authority_name=authority_name,

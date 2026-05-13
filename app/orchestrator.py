@@ -134,7 +134,8 @@ def run_complaint_pipeline(media: MediaMetadata) -> FinalComplaint:
             severity=vision_res["severity"],
             media_url=str(media.media_url),
             platform=media.platform,
-            posted_at=media.posted_at.isoformat()
+            posted_at=media.posted_at.isoformat(),
+            location_resolved=vision_res["location_resolved"]
         )
         
         complaint = FinalComplaint.model_validate_json(submission_json)

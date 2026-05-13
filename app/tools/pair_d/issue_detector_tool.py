@@ -211,16 +211,19 @@ def _multimodal_refine(
     Falls back to vision_result unchanged if the API call fails.
     """
     try:
+        prompt = _MULTIMODAL_ISSUE_PROMPT.format(
+            visual     = (f"{vision_result['label']} "
+                          f"({vision_result['confidence']:.2f}) — "
+                          f"{vision_result.get('reasoning', '')}"),
+            transcript = transcript[:400] if transcript else 'none',
+            on_screen  = on_screen[:200]  if on_screen  else 'none',
+            whatsapp   = whatsapp[:200]   if whatsapp   else 'none',
+        )
+        print(f"\n[AI] Sending Issue Refinement Prompt:\n{prompt}\n")
+
         response = nvidia_client.chat.completions.create(
             model=os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct"),
-            messages=[{'role': 'user', 'content': _MULTIMODAL_ISSUE_PROMPT.format(
-                visual     = (f"{vision_result['label']} "
-                              f"({vision_result['confidence']:.2f}) — "
-                              f"{vision_result.get('reasoning', '')}"),
-                transcript = transcript[:400] if transcript else 'none',
-                on_screen  = on_screen[:200]  if on_screen  else 'none',
-                whatsapp   = whatsapp[:200]   if whatsapp   else 'none',
-            )}],
+            messages=[{'role': 'user', 'content': prompt}],
             max_tokens=1024,
         )
         raw     = response.choices[0].message.content.strip()
