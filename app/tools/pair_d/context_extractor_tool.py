@@ -483,8 +483,7 @@ def extract_context(
     print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
     print("=" * 55)
 
-<<<<<<< HEAD
-=======
+
     return context
 
     print("\n" + "=" * 55)
@@ -495,5 +494,3 @@ def extract_context(
     print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
     print("=" * 55)
 
->>>>>>> 6d6772036b2692041e257aeac134c49c4c740982
-    return context
