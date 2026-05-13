@@ -36,6 +36,9 @@ nvidia_client = OpenAI(
 # ── YOLO model — loaded once at import time ───────────────────────────────────
 _YOLO_MODEL = YOLO("yolov8n.pt")
 
+def get_yolo_model():
+    return _YOLO_MODEL
+
 # ── YOLO COCO class → raw issue type ─────────────────────────────────────────
 _ISSUE_MAP = {
     'bottle': 'garbage', 'cup': 'garbage', 'handbag': 'garbage',
@@ -296,14 +299,6 @@ def detect_issue(context: dict) -> dict:
     print(f"\n  {raw_label} → canonical: \"{issue_type}\"  "
           f"conf={refined.get('confidence', 0.0):.2f}")
     print("=" * 55)
-
-    # FIX
-    return {
-        'issue_type':      issue_type,
-        'confidence':      float(refined.get('confidence', 0.0)),
-        'reasoning':       refined.get('reasoning', ''),
-        'refinement_used': refinement_used,
-    }nt("=" * 55)
 
     # FIX
     return {

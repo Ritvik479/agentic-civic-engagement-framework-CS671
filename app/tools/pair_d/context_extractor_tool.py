@@ -62,6 +62,9 @@ _WHISPER_MODEL = whisper.load_model("medium")
 from ultralytics import YOLO
 _YOLO_MODEL = YOLO("yolov8n.pt")   # lightweight nano — only used for scoring
 
+def get_yolo_model():
+    return _YOLO_MODEL
+
 # Objects that indicate a news-studio / indoor shot — penalise these frames
 _INDOOR_STUDIO_LABELS = {
     'laptop', 'tv', 'monitor', 'keyboard', 'mouse',
@@ -471,16 +474,6 @@ def extract_context(
     if frame_b64:
         print("\n[4/4] Extracting on-screen text...")
         context["on_screen_text"] = _extract_on_screen_text(frame_b64)
-
-    print("\n" + "=" * 55)
-    print("AGENT 0 COMPLETE")
-    print(f"  transcript   : {len(context['transcript'])} chars "
-          f"(lang={context['transcript_lang']}, src={context['transcript_source']})")
-    print(f"  on_screen    : {len(context['on_screen_text'])} chars")
-    print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
-    print("=" * 55)
-
-    return context)
 
     print("\n" + "=" * 55)
     print("AGENT 0 COMPLETE")

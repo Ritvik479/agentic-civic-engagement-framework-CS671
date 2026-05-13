@@ -39,12 +39,6 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
         issue.strip().lower()
     )
 
-    key = (
-        state.strip().lower(),
-        district.strip().lower(),
-        issue.strip().lower()
-    )
-
     entry = authority_index.get(key)
 
     # Fallback: Find ANY issue for this district if the specific issue fails
@@ -65,7 +59,7 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
         return {
             "authority_name":     "Unknown Authority",
             "authority_email":    "",
-            "authority_portal":   "",
+            "authority_portal":   None,
             "authority_phone":    "",
             "current_level":      "level1",
             "current_level_num": 1
