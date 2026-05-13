@@ -303,7 +303,7 @@ def detect_issue(context: dict) -> dict:
         'confidence':      float(refined.get('confidence', 0.0)),
         'reasoning':       refined.get('reasoning', ''),
         'refinement_used': refinement_used,
-    }nt("=" * 55)
+    }
 
     # FIX
     return {

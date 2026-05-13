@@ -480,7 +480,7 @@ def extract_context(
     print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
     print("=" * 55)
 
-    return context)
+    return context
 
     print("\n" + "=" * 55)
     print("AGENT 0 COMPLETE")
