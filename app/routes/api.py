@@ -5,6 +5,7 @@
 
 import os
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import (
     APIRouter,
@@ -16,7 +17,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
-from app.orchestrator import run_agent
+from app.orchestrator import run_complaint_pipeline
 from app.db.database import (
     fetch_complaint,
     fetch_slim_complaints,
@@ -24,8 +25,10 @@ from app.db.database import (
     create_pending_complaint,
     insert_log,
     update_status,
-    update_location          # new — see database.py
+    update_location,
+    save_complaint_record
 )
+from app.schemas.issue_schema import MediaMetadata, MediaType
 from app.schemas.requests import ConfirmLocationRequest
 from app.schemas.responses import (
     ProcessResponse,
@@ -44,7 +47,47 @@ UPLOAD_DIR = "uploads"
 MAX_VIDEO_BYTES = 200 * 1024 * 1024          # 200 MB hard limit
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".webm", ".jpg", ".jpeg", ".png", ".heic"}
 
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".heic"}
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Background pipeline wrapper
+# Constructs MediaMetadata, runs the pipeline, and writes result to DB.
+# Must be async — awaits DB calls after pipeline completes.
+# ---------------------------------------------------------------------------
+async def _run_pipeline_background(
+    tracking_id: str,
+    media_url_str: str,
+    media_type: MediaType,
+    geotag: str,
+    caption: str,
+    reporter_handle: str,
+):
+    media = MediaMetadata(
+        media_url=media_url_str,          # pydantic coerces str → HttpUrl
+        media_type=media_type,
+        platform="app",                   # direct upload — no social platform
+        posted_at=datetime.now(timezone.utc),
+        geotag=geotag or None,
+        caption=caption or None,
+        reporter_handle=reporter_handle or None,
+    )
+
+    try:
+        complaint = run_complaint_pipeline(media)
+        # SAVE THE RECORD - Fixes bug where pipeline result was lost
+        await save_complaint_record(tracking_id, complaint)
+        await update_status(tracking_id, complaint.status.value)
+        await insert_log(
+            tracking_id,
+            f"Pipeline completed. Status: {complaint.status.value}. "
+            f"Authority: {complaint.authority_name}.",
+        )
+    except Exception as exc:
+        await update_status(tracking_id, "failed")
+        await insert_log(tracking_id, f"Pipeline error: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -99,11 +142,9 @@ async def process_video(
     # Write video to disk in chunks — avoids loading full file into RAM
     # FIX: was await video.read() which reads entire file into memory at once
     # -----------------------------------------------------------------------
-    filename = f"{uuid.uuid4().hex}{ext}"
-    filepath = os.path.join(UPLOAD_DIR, filename)
-
     abs_path = ""
     if video:
+        # ext is guaranteed to be defined here due to the 'if video' block above
         filename = f"{uuid.uuid4().hex}{ext}"
         filepath = os.path.join(UPLOAD_DIR, filename)
         total_bytes = 0
@@ -141,23 +182,34 @@ async def process_video(
     await insert_log(tracking_id, "Video uploaded successfully.")
 
     # -----------------------------------------------------------------------
+    # Resolve the URL string and MediaType that the pipeline will consume.
+    # Uploaded files are served from their absolute path (file:// scheme);
+    # URL submissions are passed through directly.
+    # -----------------------------------------------------------------------
+    if video:
+        media_url_str = f"file://{abs_path}"
+        media_type = MediaType.IMAGE if ext in IMAGE_EXTENSIONS else MediaType.VIDEO
+    else:
+        media_url_str = video_url
+        # Best-effort type detection for URL submissions
+        url_ext = os.path.splitext(video_url.split("?")[0])[1].lower()
+        media_type = MediaType.IMAGE if url_ext in IMAGE_EXTENSIONS else MediaType.VIDEO
+
+    # Build a geotag string from the form fields the way the schema expects it
+    geotag_parts = [p for p in (landmark, district, state) if p]
+    geotag = ", ".join(geotag_parts) if geotag_parts else None
+
+    # -----------------------------------------------------------------------
     # Fire background pipeline — returns immediately to frontend
-    # FIX: pass lat/lng as separate floats, not a "lat,lng" string
-    # (context.py now has separate lat: float and lng: float fields)
     # -----------------------------------------------------------------------
     background_tasks.add_task(
-        run_agent,
-        video_path=abs_path if video else "",
-        video_url=video_url,
+        _run_pipeline_background,
         tracking_id=tracking_id,
-        name=name,
-        email=email,
-        phone=phone,
-        user_state=state,
-        user_district=district,
-        landmark=landmark,
-        user_issue_description=user_issue_description,
-        user_id=user_id,
+        media_url_str=media_url_str,
+        media_type=media_type,
+        geotag=geotag,
+        caption=user_issue_description,
+        reporter_handle=user_id,
     )
 
     return JSONResponse(content={
@@ -226,10 +278,12 @@ async def confirm_location(data: ConfirmLocationRequest):
         f"Location confirmed: {data.final_landmark or ''}, {data.final_district}, {data.final_state}".strip(", ")
     )
 
-    await update_status(data.id, "authority_mapped")
+    # BUG FIX: Only update status if it's not already terminal
+    if complaint["submission_status"] not in ("submitted", "failed", "email_only") and not complaint["submission_status"].startswith("escalated"):
+        await update_status(data.id, "authority_mapped")
 
     return JSONResponse(content={
-        "status": "authority_mapped"
+        "status": "authority_mapped" if complaint["submission_status"] not in ("submitted", "failed", "email_only") else complaint["submission_status"]
     })
 
 

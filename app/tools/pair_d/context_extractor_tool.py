@@ -42,18 +42,37 @@ import cv2
 import whisper
 import yt_dlp
 from groq import Groq
+from openai import OpenAI
 
-# ── Groq client ───────────────────────────────────────────────────────────────
+# ── Groq client (Vision) ──────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
 
-# ── Whisper model — loaded once at import time, not on every call ─────────────
-# "medium" handles Hindi / regional languages well; swap to "large-v3" for
-# better accuracy at the cost of speed.
-_WHISPER_MODEL = whisper.load_model("medium")
+# ── NVIDIA client (Text) ──────────────────────────────────────────────────────
+nvidia_client = OpenAI(
+    base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
 
-# ── YOLO model (used only for frame scoring here, NOT issue detection) ────────
+# ── Whisper model — lazy loaded ──────────────────────────────────────────────
+_WHISPER_MODEL = None
+
+def get_whisper_model():
+    global _WHISPER_MODEL
+    if _WHISPER_MODEL is None:
+        print("[ContextExtractor] Loading Whisper model (medium)...")
+        _WHISPER_MODEL = whisper.load_model("medium")
+    return _WHISPER_MODEL
+
+# ── YOLO model — lazy loaded ─────────────────────────────────────────────────
 from ultralytics import YOLO
-_YOLO_MODEL = YOLO("yolov8n.pt")   # lightweight nano — only used for scoring
+_YOLO_MODEL = None
+
+def get_yolo_model():
+    global _YOLO_MODEL
+    if _YOLO_MODEL is None:
+        print("[ContextExtractor] Loading YOLO model (yolov8n)...")
+        _YOLO_MODEL = YOLO("yolov8n.pt")
+    return _YOLO_MODEL
 
 # Objects that indicate a news-studio / indoor shot — penalise these frames
 _INDOOR_STUDIO_LABELS = {
@@ -107,7 +126,8 @@ def _score_frame(frame) -> float:
     Returns raw sharpness if the frame looks like an outdoor civic scene.
     """
     sharpness = _sharpness(frame)
-    results    = _YOLO_MODEL(frame, verbose=False)[0]
+    model = get_yolo_model()
+    results = model(frame, verbose=False)[0]
     frame_area = frame.shape[0] * frame.shape[1]
 
     person_area  = 0.0
@@ -254,7 +274,7 @@ def _get_transcript(video_path: str, youtube_auto_subs: str = '') -> dict:
     if audio_path is None:
         return {"text": "", "language": "unknown", "source": "none"}
 
-    result = _WHISPER_MODEL.transcribe(audio_path, task="transcribe")
+    result = get_whisper_model().transcribe(audio_path, task="transcribe")
     os.remove(audio_path)
     print(f"  [transcript] Whisper done | lang={result['language']}")
     return {
@@ -265,19 +285,19 @@ def _get_transcript(video_path: str, youtube_auto_subs: str = '') -> dict:
 
 
 def _translate_to_english(text: str, source_language: str) -> str:
-    """Translates to English via Groq. Returns text unchanged if already English."""
+    """Translates to English via NVIDIA. Returns text unchanged if already English."""
     if not text or source_language.lower() in ("en", "english"):
         return text
 
-    response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+    response = nvidia_client.chat.completions.create(
+        model=os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct"),
         messages=[{"role": "user", "content": (
             "Translate the following text to English.\n"
             "Preserve tone exactly — urgency, anger, distress.\n"
             "Return ONLY the translated text, no explanation.\n\n"
             f"Text: {text}"
         )}],
-        max_tokens=1000,
+        max_tokens=1024,
     )
     translated = response.choices[0].message.content.strip()
     print(f"  [translate] {source_language} → English")
@@ -295,7 +315,7 @@ def _extract_from_social_url(url: str) -> dict:
     Returns: {video_path, caption, tags, auto_subs, title}
     """
     # UUID in filename — safe for concurrent users
-    output_template = f"/tmp/{uuid.uuid4()}_social.%(ext)s"
+    output_template = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_social.%(ext)s")
 
     ydl_opts = {
         "writesubtitles":    True,
@@ -349,7 +369,7 @@ def _extract_on_screen_text(frame_b64: str) -> str:
                  "image_url": {"url": f"data:image/jpeg;base64,{frame_b64}"}},
                 {"type": "text", "text": _ON_SCREEN_TEXT_PROMPT},
             ]}],
-            max_tokens=300,
+            max_tokens=1024,
         )
         text = response.choices[0].message.content.strip()
         print(f"  [on-screen text] {text[:80]}{'...' if len(text) > 80 else ''}")
@@ -411,17 +431,26 @@ def extract_context(
 
     # FIX
     if url:
-        print("\n[1/4] Downloading from social media URL...")
-        social = _extract_from_social_url(url)
-        if social["video_path"] and os.path.exists(social["video_path"]):
-            video_path = social["video_path"]
-            context["social_caption"] = social["caption"]
-            context["social_tags"]    = social["tags"]
-            context["social_title"]   = social["title"]
-            youtube_auto_subs         = social["auto_subs"]
+        if url.startswith("file://"):
+            # Local file — strip prefix and skip yt-dlp
+            video_path = url.replace("file://", "", 1)
+            # On Windows, file:///C:/path/to/file might become /C:/path/to/file
+            if video_path.startswith("/") and len(video_path) > 2 and video_path[2] == ":":
+                video_path = video_path[1:]
+            video_path = video_path.replace("/", os.sep)
+            print(f"\n[1/4] Using local file: {video_path}")
         else:
-            # Download failed — do NOT attach social metadata to any fallback video
-            video_path = None
+            print("\n[1/4] Downloading from social media URL...")
+            social = _extract_from_social_url(url)
+            if social["video_path"] and os.path.exists(social["video_path"]):
+                video_path = social["video_path"]
+                context["social_caption"] = social["caption"]
+                context["social_tags"]    = social["tags"]
+                context["social_title"]   = social["title"]
+                youtube_auto_subs         = social["auto_subs"]
+            else:
+                # Download failed — do NOT attach social metadata to any fallback video
+                video_path = None
 
     if not video_path or not os.path.exists(video_path):
         print("  No valid video — cannot continue")
@@ -463,4 +492,6 @@ def extract_context(
     print(f"  frame        : {'✓' if context['frame_b64'] else '✗'}")
     print("=" * 55)
 
+
     return context
+

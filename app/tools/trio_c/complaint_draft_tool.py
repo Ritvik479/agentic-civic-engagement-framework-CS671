@@ -4,7 +4,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../")))
 
 from dotenv import load_dotenv
-from groq import Groq
+from openai import OpenAI
 
 # CORRECT
 from app.tools.trio_c.smart_rag_tool import retrieve_laws
@@ -13,8 +13,10 @@ from app.tools.trio_c.severity_score_tool import calculate_severity
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=api_key)
+nvidia_client = OpenAI(
+    base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
 
 
 def extract_location_parts(location: str):
@@ -28,7 +30,7 @@ def extract_location_parts(location: str):
     return "Unknown", "Unknown"
 
 
-def draft_complaint(issue: str, description: str, location: str) -> str:
+def draft_complaint(issue: str, description: str, location: str, severity: int = 2) -> str:
 
     # -------------------------------
     # STEP 1 — Extract district/state
@@ -36,10 +38,10 @@ def draft_complaint(issue: str, description: str, location: str) -> str:
     district, state = extract_location_parts(location)
 
     # -------------------------------
-    # STEP 2 — Calculate severity
+    # STEP 2 — Calculate severity (REMOVED - now passed as argument)
     # -------------------------------
-    severity_result = calculate_severity(issue, description, location)
-    severity = severity_result.get("severity", 2)
+    # severity_result = calculate_severity(issue, description, location)
+    # severity = severity_result.get("severity", 2)
 
     # -------------------------------
     # STEP 3 — Retrieve laws
@@ -83,19 +85,20 @@ Instructions:
 - Do NOT include placeholders or extra formatting
 - Keep it under 120 words
 """
+    print(f"\n[AI] Sending Complaint Drafting Prompt:\n{prompt}\n")
 
     # -------------------------------
     # STEP 6 — LLM Call
     # -------------------------------
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+        response = nvidia_client.chat.completions.create(
+            model=os.getenv("NVIDIA_MODEL", "nvidia/llama-3.1-nemotron-70b-instruct"),
             messages=[
                 {"role": "system", "content": "You draft formal government complaints."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
-            max_tokens=300
+            max_tokens=1024
         )
 
         return response.choices[0].message.content.strip()

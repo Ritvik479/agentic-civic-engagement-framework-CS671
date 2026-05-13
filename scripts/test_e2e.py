@@ -131,8 +131,8 @@ if __name__ == "__main__":
     import sys
 
     video_options = {
-        "stray":     ("data/test_vision/videos/stray_animals.mp4",     "Stray animals roaming near residential area causing disturbance"),
-        "pollution": ("data/test_vision/videos/pollution_smoke.mp4",    "Heavy smoke and fumes from factory chimney near residential colony"),
+        "stray":     (r"C:\Users\arora\OneDrive\Desktop\DL-Project\agentic-civic-engagement-framework-CS671\data\test_vision\videos\stray_animals.mp4",     "Stray animals roaming near residential area causing disturbance"),
+        "pollution": (r"C:\Users\arora\OneDrive\Desktop\DL-Project\agentic-civic-engagement-framework-CS671\data\test_vision\videos\pollution_smoke.mp4",    "Heavy smoke and fumes from factory chimney near residential colony"),
     }
 
     choice = sys.argv[1] if len(sys.argv) > 1 else "stray"

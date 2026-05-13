@@ -1,7 +1,10 @@
+import os
 import json
 
-# Load authority dataset
-with open("configs/authority_data.json") as f:
+# Load authority dataset using path relative to this file
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "configs", "authority_data.json")
+
+with open(CONFIG_PATH) as f:
     authority_data = json.load(f)["data"]
 
 # Build lookup index
@@ -39,12 +42,6 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
         issue.strip().lower()
     )
 
-    key = (
-        state.strip().lower(),
-        district.strip().lower(),
-        issue.strip().lower()
-    )
-
     entry = authority_index.get(key)
 
     # Fallback: Find ANY issue for this district if the specific issue fails
@@ -65,7 +62,7 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
         return {
             "authority_name":     "Unknown Authority",
             "authority_email":    "",
-            "authority_portal":   "",
+            "authority_portal":   None,
             "authority_phone":    "",
             "current_level":      "level1",
             "current_level_num": 1
@@ -88,9 +85,11 @@ def lookup_authority(issue: str, state: str, district: str, severity: int) -> di
 
     return {
         "authority_name":     authority.get("authority", ""),
-        "authority_email":    authority.get("email", ""),
-        "authority_portal":   authority.get("portal", ""),
-        "authority_phone":    authority.get("phone", ""),   # ADD
+        "authority_email":     authority.get("email", ""),
+        "authority_portal":    authority.get("portal") if authority.get("portal") else None,
+        "authority_phone":    authority.get("phone", ""),
+        "authority_code":     authority.get("code", ""),
+
         "current_level":      selected_level,
         "current_level_num":  level_num
     }

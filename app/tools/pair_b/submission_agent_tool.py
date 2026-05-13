@@ -53,8 +53,8 @@ def submit_complaint(ctx: dict) -> dict:
         }
     """
     # --- ADD THIS BLOCK ---
-    if ctx.get("authority_name") == "Unknown Authority" or not ctx.get("authority_portal"):
-        print("[SubmissionAgent] ABORTING: No valid authority or portal URL found.")
+    if ctx.get("authority_name") == "Unknown Authority":
+        print("[SubmissionAgent] ABORTING: No valid authority found.")
         return {
             "success": False,
             "submission_status": "failed",

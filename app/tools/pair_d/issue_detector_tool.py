@@ -18,16 +18,30 @@ import json
 import base64
 
 from groq import Groq
+from openai import OpenAI
 from ultralytics import YOLO
 
 from collections import defaultdict
 import re
 
-# ── Groq client ───────────────────────────────────────────────────────────────
+# ── Groq client (Vision) ──────────────────────────────────────────────────────
 client = Groq()  # reads GROQ_API_KEY from environment
 
-# ── YOLO model — loaded once at import time ───────────────────────────────────
-_YOLO_MODEL = YOLO("yolov8n.pt")
+# ── NVIDIA client (Text) ──────────────────────────────────────────────────────
+nvidia_client = OpenAI(
+    base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+    api_key=os.getenv("NVIDIA_API_KEY")
+)
+
+# ── YOLO model — lazy loaded ──────────────────────────────────────────────────
+_YOLO_MODEL = None
+
+def get_yolo_model():
+    global _YOLO_MODEL
+    if _YOLO_MODEL is None:
+        print("[IssueDetector] Loading YOLO model (yolov8n)...")
+        _YOLO_MODEL = YOLO("yolov8n.pt")
+    return _YOLO_MODEL
 
 # ── YOLO COCO class → raw issue type ─────────────────────────────────────────
 _ISSUE_MAP = {
@@ -105,7 +119,8 @@ def _yolo_detect(frame_path: str) -> dict:
     Falls back to {'label': 'unknown', 'confidence': 0.0, 'reasoning': ''}
     if no mapped civic object is found.
     """
-    results    = _YOLO_MODEL(frame_path, verbose=False)[0]
+    model = get_yolo_model()
+    results = model(frame_path, verbose=False)[0]
     detections = []
     obj_labels = []
 
@@ -159,7 +174,7 @@ def _groq_vision_detect(frame_b64: str) -> dict:
                  'image_url': {'url': f'data:image/jpeg;base64,{frame_b64}'}},
                 {'type': 'text', 'text': _GROQ_VISION_ISSUE_PROMPT},
             ]}],
-            max_tokens=150,
+            max_tokens=1024,
         )
         raw    = response.choices[0].message.content.strip()
         match = re.search(r'\{.*\}', raw, re.DOTALL)
@@ -191,22 +206,25 @@ def _multimodal_refine(
     whatsapp:      str,
 ) -> tuple:
     """
-    Asks Groq text LLM to verify/refine the visual classification using
+    Asks NVIDIA text LLM to verify/refine the visual classification using
     transcript, on-screen text, and WhatsApp context as additional signals.
     Falls back to vision_result unchanged if the API call fails.
     """
     try:
-        response = client.chat.completions.create(
-            model='llama-3.3-70b-versatile',
-            messages=[{'role': 'user', 'content': _MULTIMODAL_ISSUE_PROMPT.format(
-                visual     = (f"{vision_result['label']} "
-                              f"({vision_result['confidence']:.2f}) — "
-                              f"{vision_result.get('reasoning', '')}"),
-                transcript = transcript[:400] if transcript else 'none',
-                on_screen  = on_screen[:200]  if on_screen  else 'none',
-                whatsapp   = whatsapp[:200]   if whatsapp   else 'none',
-            )}],
-            max_tokens=150,
+        prompt = _MULTIMODAL_ISSUE_PROMPT.format(
+            visual     = (f"{vision_result['label']} "
+                          f"({vision_result['confidence']:.2f}) — "
+                          f"{vision_result.get('reasoning', '')}"),
+            transcript = transcript[:400] if transcript else 'none',
+            on_screen  = on_screen[:200]  if on_screen  else 'none',
+            whatsapp   = whatsapp[:200]   if whatsapp   else 'none',
+        )
+        print(f"\n[AI] Sending Issue Refinement Prompt:\n{prompt}\n")
+
+        response = nvidia_client.chat.completions.create(
+            model=os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct"),
+            messages=[{'role': 'user', 'content': prompt}],
+            max_tokens=1024,
         )
         raw     = response.choices[0].message.content.strip()
         raw     = raw.replace('```json', '').replace('```', '').strip()
